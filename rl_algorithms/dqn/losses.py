@@ -244,3 +244,72 @@ class DQNLoss:
         )
 
         return dq_loss_element_wise, q_values
+
+
+@LOSSES.register_module
+class R2D1Loss:
+    def __call__(
+        self,
+        model: Brain,
+        target_model: Brain,
+        experiences: Tuple[torch.Tensor, ...],
+        gamma: float,
+        head_cfg: ConfigDict,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Return element-wise R2D1 loss and Q-values."""
+        states, actions, rewards, hiddens, dones, lengths = experiences[:6]
+        q_values, _ = model(
+            torch.split(states, states.shape[1] - 1, dim=1)[0].contiguous(),
+            hiddens[:, 0].contiguous().squeeze(1),
+        )
+
+        # According to noisynet paper,
+        # it resamples noisynet parameters on online network when using double q
+        # but we don't because there is no remarkable difference in performance.
+        next_q_values, _ = model(
+            torch.stack(torch.split(states, 1, dim=1)[1:], dim=1)
+            .squeeze()
+            .contiguous(),
+            hiddens[:, 1].contiguous().squeeze(1),
+        )
+        next_target_q_values, _ = target_model(
+            torch.stack(torch.split(states, 1, dim=1)[1:], dim=1)
+            .squeeze()
+            .contiguous(),
+            hiddens[:, 1].contiguous().squeeze(1),
+        )
+
+        curr_q_value = q_values.gather(
+            -1,
+            torch.split(actions, actions.shape[1] - 1, dim=-1)[0].long().unsqueeze(-1),
+        )
+        next_q_value = next_target_q_values.gather(  # Double DQN
+            -1, next_q_values.argmax(-1).unsqueeze(-1)
+        )
+
+        # G_t   = r + gamma * v(s_{t+1})  if state != Terminal
+        #       = r                       otherwise
+
+        actions = torch.split(actions, actions.shape[1] - 1, dim=1)[0].unsqueeze(-1)
+        rewards = torch.split(rewards, rewards.shape[1] - 1, dim=1)[0].unsqueeze(-1)
+        dones = torch.split(dones, dones.shape[1] - 1, dim=1)[0].unsqueeze(-1)
+
+        masks = 1 - dones
+        target = rewards + gamma * next_q_value * masks
+        target = target.to(device)
+
+        # calculate dq loss
+        dq_loss_element_wise = F.smooth_l1_loss(
+            curr_q_value, target.detach(), reduction="none"
+        )
+
+        # cut burn-in steps
+        dq_loss_element_wise = dq_loss_element_wise[:, head_cfg.configs.burn_in_step :]
+
+        # make zero-padding part loss to zero.
+        for j, length in enumerate(lengths):
+            dq_loss_element_wise[j][length:] = 0
+
+        dq_loss_element_wise = torch.mean(dq_loss_element_wise, dim=1)
+
+        return dq_loss_element_wise, q_values
