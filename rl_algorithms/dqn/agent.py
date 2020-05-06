@@ -74,7 +74,6 @@ class DQNAgent(Agent):
 
         self.curr_state = np.zeros(1)
         self.episode_step = 0
-        self.total_step = 0
         self.i_episode = 0
 
         self.hyper_params = hyper_params
@@ -202,6 +201,7 @@ class DQNAgent(Agent):
                     "dqn loss": loss[0],
                     "avg q values": loss[1],
                     "time per each step": avg_time_cost,
+                    "total_step": self.total_step,
                 }
             )
 
@@ -244,10 +244,10 @@ class DQNAgent(Agent):
 
                 action = self.select_action(state)
                 next_state, reward, done, _ = self.step(action)
-                self.total_step += 1
                 self.episode_step += 1
 
                 if len(self.memory) >= self.hyper_params.update_starts_from:
+                    self.total_step += 1
                     if self.total_step % self.hyper_params.train_freq == 0:
                         for _ in range(self.hyper_params.multiple_update):
                             experience = self.sample_experience()
