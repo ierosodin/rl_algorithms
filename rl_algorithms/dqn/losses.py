@@ -258,41 +258,31 @@ class R2D1Loss:
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Return element-wise R2D1 loss and Q-values."""
         states, actions, rewards, hiddens, dones, lengths = experiences[:6]
-        q_values, _ = model(
-            torch.split(states, states.shape[1] - 1, dim=1)[0].contiguous(),
-            hiddens[:, 0].contiguous().squeeze(1),
-        )
+        curr_states = states.narrow(1, 0, states.shape[1] - 1).contiguous()
+        next_states = states.narrow(1, 1, states.shape[1] - 1).contiguous()
+
+        curr_hiddens = hiddens[:, 0].contiguous().squeeze(1)
+        next_hiddens = hiddens[:, 1].contiguous().squeeze(1)
+
+        actions = actions.narrow(-1, 0, actions.shape[1] - 1).long().unsqueeze(-1)
+        rewards = rewards.narrow(1, 0, rewards.shape[1] - 1).unsqueeze(-1)
+        dones = dones.narrow(1, 0, dones.shape[1] - 1).unsqueeze(-1)
+
+        q_values, _ = model(curr_states, curr_hiddens,)
 
         # According to noisynet paper,
         # it resamples noisynet parameters on online network when using double q
         # but we don't because there is no remarkable difference in performance.
-        next_q_values, _ = model(
-            torch.stack(torch.split(states, 1, dim=1)[1:], dim=1)
-            .squeeze()
-            .contiguous(),
-            hiddens[:, 1].contiguous().squeeze(1),
-        )
-        next_target_q_values, _ = target_model(
-            torch.stack(torch.split(states, 1, dim=1)[1:], dim=1)
-            .squeeze()
-            .contiguous(),
-            hiddens[:, 1].contiguous().squeeze(1),
-        )
+        next_q_values, _ = model(next_states, next_hiddens,)
+        next_target_q_values, _ = target_model(next_states, next_hiddens,)
 
-        curr_q_value = q_values.gather(
-            -1,
-            torch.split(actions, actions.shape[1] - 1, dim=-1)[0].long().unsqueeze(-1),
-        )
+        curr_q_value = q_values.gather(-1, actions,)
         next_q_value = next_target_q_values.gather(  # Double DQN
             -1, next_q_values.argmax(-1).unsqueeze(-1)
         )
 
         # G_t   = r + gamma * v(s_{t+1})  if state != Terminal
         #       = r                       otherwise
-
-        actions = torch.split(actions, actions.shape[1] - 1, dim=1)[0].unsqueeze(-1)
-        rewards = torch.split(rewards, rewards.shape[1] - 1, dim=1)[0].unsqueeze(-1)
-        dones = torch.split(dones, dones.shape[1] - 1, dim=1)[0].unsqueeze(-1)
 
         masks = 1 - dones
         target = rewards + gamma * next_q_value * masks
@@ -313,3 +303,128 @@ class R2D1Loss:
         dq_loss_element_wise = torch.mean(dq_loss_element_wise, dim=1)
 
         return dq_loss_element_wise, q_values
+
+
+@LOSSES.register_module
+class R2D1IQNLoss:
+    def __call__(
+        self,
+        model: Brain,
+        target_model: Brain,
+        experiences: Tuple[torch.Tensor, ...],
+        gamma: float,
+        head_cfg: ConfigDict,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Return element-wise IQN loss and Q-values.
+
+        Reference: https://github.com/google/dopamine
+        """
+        states, actions, rewards, next_states, dones = experiences[:5]
+        batch_size = states.shape[0]
+
+        # size of rewards: (n_tau_prime_samples x batch_size) x 1.
+        rewards = rewards.repeat(head_cfg.configs.n_tau_prime_samples, 1)
+
+        # size of gamma_with_terminal: (n_tau_prime_samples x batch_size) x 1.
+        masks = 1 - dones
+        gamma_with_terminal = masks * gamma
+        gamma_with_terminal = gamma_with_terminal.repeat(
+            head_cfg.configs.n_tau_prime_samples, 1
+        )
+
+        # Get the indices of the maximium Q-value across the action dimension.
+        # Shape of replay_next_qt_argmax: (n_tau_prime_samples x batch_size) x 1.
+        next_actions = model(next_states).argmax(dim=1)  # double Q
+        next_actions = next_actions[:, None]
+        next_actions = next_actions.repeat(head_cfg.configs.n_tau_prime_samples, 1)
+
+        # Shape of next_target_values: (n_tau_prime_samples x batch_size) x 1.
+        target_quantile_values, _ = target_model.forward_(
+            next_states, head_cfg.configs.n_tau_prime_samples
+        )
+        target_quantile_values = target_quantile_values.gather(1, next_actions)
+        target_quantile_values = rewards + gamma_with_terminal * target_quantile_values
+        target_quantile_values = target_quantile_values.detach()
+
+        # Reshape to n_tau_prime_samples x batch_size x 1 since this is
+        # the manner in which the target_quantile_values are tiled.
+        target_quantile_values = target_quantile_values.view(
+            head_cfg.configs.n_tau_prime_samples, batch_size, 1
+        )
+
+        # Transpose dimensions so that the dimensionality is batch_size x
+        # n_tau_prime_samples x 1 to prepare for computation of Bellman errors.
+        target_quantile_values = torch.transpose(target_quantile_values, 0, 1)
+
+        # Get quantile values: (n_tau_samples x batch_size) x action_dim.
+        quantile_values, quantiles = model.forward_(
+            states, head_cfg.configs.n_tau_samples
+        )
+        reshaped_actions = actions[:, None].repeat(head_cfg.configs.n_tau_samples, 1)
+        chosen_action_quantile_values = quantile_values.gather(
+            1, reshaped_actions.long()
+        )
+        chosen_action_quantile_values = chosen_action_quantile_values.view(
+            head_cfg.configs.n_tau_samples, batch_size, 1
+        )
+
+        # Transpose dimensions so that the dimensionality is batch_size x
+        # n_tau_prime_samples x 1 to prepare for computation of Bellman errors.
+        chosen_action_quantile_values = torch.transpose(
+            chosen_action_quantile_values, 0, 1
+        )
+
+        # Shape of bellman_erors and huber_loss:
+        # batch_size x num_tau_prime_samples x num_tau_samples x 1.
+        bellman_errors = (
+            target_quantile_values[:, :, None, :]
+            - chosen_action_quantile_values[:, None, :, :]
+        )
+
+        # The huber loss (introduced in QR-DQN) is defined via two cases:
+        # case_one: |bellman_errors| <= kappa
+        # case_two: |bellman_errors| > kappa
+        huber_loss_case_one = (
+            (torch.abs(bellman_errors) <= head_cfg.configs.kappa).float()
+            * 0.5
+            * bellman_errors ** 2
+        )
+        huber_loss_case_two = (
+            (torch.abs(bellman_errors) > head_cfg.configs.kappa).float()
+            * head_cfg.configs.kappa
+            * (torch.abs(bellman_errors) - 0.5 * head_cfg.configs.kappa)
+        )
+        huber_loss = huber_loss_case_one + huber_loss_case_two
+
+        # Reshape quantiles to batch_size x num_tau_samples x 1
+        quantiles = quantiles.view(head_cfg.configs.n_tau_samples, batch_size, 1)
+        quantiles = torch.transpose(quantiles, 0, 1)
+
+        # Tile by num_tau_prime_samples along a new dimension. Shape is now
+        # batch_size x num_tau_prime_samples x num_tau_samples x 1.
+        # These quantiles will be used for computation of the quantile huber loss
+        # below (see section 2.3 of the paper).
+        quantiles = quantiles[:, None, :, :].repeat(
+            1, head_cfg.configs.n_tau_prime_samples, 1, 1
+        )
+        quantiles = quantiles.to(device)
+
+        # Shape: batch_size x n_tau_prime_samples x n_tau_samples x 1.
+        quantile_huber_loss = (
+            torch.abs(quantiles - (bellman_errors < 0).float().detach())
+            * huber_loss
+            / head_cfg.configs.kappa
+        )
+
+        # Sum over current quantile value (n_tau_samples) dimension,
+        # average over target quantile value (n_tau_prime_samples) dimension.
+        # Shape: batch_size x n_tau_prime_samples x 1.
+        loss = torch.sum(quantile_huber_loss, dim=2)
+
+        # Shape: batch_size x 1.
+        iqn_loss_element_wise = torch.mean(loss, dim=1)
+
+        # q values for regularization.
+        q_values = model(states)
+
+        return iqn_loss_element_wise, q_values
