@@ -2,6 +2,7 @@
 """Replay buffer for baselines."""
 
 from collections import deque
+import random
 from typing import Any, Deque, List, Tuple
 
 import numpy as np
@@ -116,8 +117,8 @@ class RecurrentReplayBuffer:
         if done and self.idx < self.sequence_size:
             self.length_buf[self.episode_idx] = self.idx
             while self.idx < self.sequence_size:
-                self.local_obs_buf[self.idx] = np.zeros(self.init_state.size)
-                self.local_acts_buf[self.idx] = np.zeros(self.init_action.size)
+                self.local_obs_buf[self.idx] = np.zeros(self.init_state.shape)
+                self.local_acts_buf[self.idx] = np.zeros(self.init_action.shape)
                 self.local_rews_buf[self.idx] = 0
                 self.local_hiddens_buf[self.idx] = torch.zeros(
                     self.init_hidden.shape
@@ -157,7 +158,8 @@ class RecurrentReplayBuffer:
         assert len(self) >= self.batch_size
 
         if indices is None:
-            indices = np.random.choice(len(self), size=self.batch_size, replace=False)
+            indices = random.sample(range(self.buffer_size), self.batch_size)
+            # indices = np.random.choice(len(self), size=self.batch_size, replace=False)
 
         states = torch.FloatTensor(self.obs_buf[indices]).to(device)
         actions = torch.FloatTensor(self.acts_buf[indices]).to(device)
