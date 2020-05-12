@@ -257,54 +257,51 @@ class R2D1Loss:
         head_cfg: ConfigDict,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Return element-wise R2D1 loss and Q-values."""
-        states, actions, rewards, hiddens, dones, lengths = experiences[:6]
-        curr_states = states.narrow(1, 0, states.shape[1] - 1).contiguous()
-        next_states = states.narrow(1, 1, states.shape[1] - 1).contiguous()
 
-        curr_hiddens = hiddens[:, 0].contiguous().squeeze(1)
-        next_hiddens = hiddens[:, 1].contiguous().squeeze(1)
+        def valid_from_done(done):
+            """Returns a float mask which is zero for all time-steps after a
+            `done=True` is signaled.  This function operates on the leading dimension
+            of `done`, assumed to correspond to time [T,...], other dimensions are
+            preserved."""
+            done = done.type(torch.float).squeeze()
+            valid = torch.ones_like(done)
+            valid[:, 1:] = 1 - torch.clamp(torch.cumsum(done[:, :-1], dim=0), max=1)
+            valid = valid[:, -1] == 0
+            valid = valid.unsqueeze(-1)
+            return valid
 
-        actions = (
-            actions.narrow(-1, 0, actions.shape[1] - 1)
-            .long()
-            .unsqueeze(-1)
-            .contiguous()
-        )
-        rewards = rewards.narrow(1, 0, rewards.shape[1] - 1).unsqueeze(-1).contiguous()
-        dones = dones.narrow(1, 0, dones.shape[1] - 1).unsqueeze(-1).contiguous()
+        states, actions, rewards, hiddens, dones, _ = experiences[:6]
 
-        q_values, _ = model(curr_states, curr_hiddens)
+        burnin_states = states[:, : head_cfg.configs.burn_in_step]
+        target_burnin_states = states[:, : head_cfg.configs.burn_in_step + 1]
+        agent_states = states[:, head_cfg.configs.burn_in_step : -1]
+        target_states = states[:, head_cfg.configs.burn_in_step + 1 :]
+        actions = actions[:, head_cfg.configs.burn_in_step : -1].long().unsqueeze(-1)
+        rewards = rewards[:, head_cfg.configs.burn_in_step : -1].unsqueeze(-1)
+        dones = dones[:, head_cfg.configs.burn_in_step : -1].unsqueeze(-1)
+        init_rnn_state = hiddens[:, 0].squeeze(1).contiguous()
 
-        # According to noisynet paper,
-        # it resamples noisynet parameters on online network when using double q
-        # but we don't because there is no remarkable difference in performance.
-        next_q_values, _ = model(next_states, next_hiddens,)
-        next_target_q_values, _ = target_model(next_states, next_hiddens,)
+        with torch.no_grad():
+            _, target_rnn_state = target_model(target_burnin_states, init_rnn_state)
+            _, init_rnn_state = model(burnin_states, init_rnn_state)
 
-        curr_q_value = q_values.gather(-1, actions,)
-        next_q_value = next_target_q_values.gather(  # Double DQN
-            -1, next_q_values.argmax(-1).unsqueeze(-1)
-        )
+            init_rnn_state = torch.transpose(init_rnn_state, 0, 1)
+            target_rnn_state = torch.transpose(target_rnn_state, 0, 1)
 
-        # G_t   = r + gamma * v(s_{t+1})  if state != Terminal
-        #       = r                       otherwise
+        # rlpyt에서 warmup_invalid_mask 적용. 원리는 잘 모르겠음.
+        burnin_invalid_mask = valid_from_done(dones[:, : head_cfg.configs.burn_in_step])
+        init_rnn_state[burnin_invalid_mask] = 0
+        target_rnn_state[burnin_invalid_mask] = 0
 
-        masks = 1 - dones
-        target = rewards + gamma * next_q_value * masks
-        target = target.to(device)
+        qs, _ = model(agent_states, init_rnn_state)
+        q = qs.gather(-1, actions)
+        with torch.no_grad():
+            target_qs, _ = target_model(target_states, target_rnn_state)
+            next_qs, _ = model(target_states, target_rnn_state)
+            next_a = torch.argmax(next_qs, dim=-1)
+            target_q = target_qs.gather(-1, next_a.unsqueeze(-1))  # Double DQN
 
-        # calculate dq loss
-        dq_loss_element_wise = F.smooth_l1_loss(
-            curr_q_value, target.detach(), reduction="none"
-        )
-
-        # cut burn-in steps
-        dq_loss_element_wise = dq_loss_element_wise[:, head_cfg.configs.burn_in_step :]
-
-        # make zero-padding part loss to zero.
-        for j, length in enumerate(lengths):
-            dq_loss_element_wise[j][length - head_cfg.configs.burn_in_step :] = 0
-
-        dq_loss_element_wise = torch.mean(dq_loss_element_wise, dim=1)
-
-        return dq_loss_element_wise, q_values
+        target = rewards + gamma * target_q
+        dq_loss_element_wise = F.smooth_l1_loss(q, target.detach(), reduction="none")
+        delta = abs(torch.mean(dq_loss_element_wise, dim=1))
+        return delta, q

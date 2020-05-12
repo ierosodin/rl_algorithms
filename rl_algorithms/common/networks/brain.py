@@ -82,9 +82,19 @@ class GRUBrain(Brain):
 
     def forward(self, x: torch.Tensor, hidden: torch.Tensor):
         """Forward method implementation. Use in get_action method in agent."""
-        x = self.backbone(x)
-        if len(x.shape) == 1:
-            x = x.reshape(1, 1, -1)
+        if isinstance(self.backbone, nn.Module):
+            if len(x.shape) > 4:
+                x = x.contiguous()
+                x_shape = x.shape
+                x = x.view(-1, x_shape[2], x_shape[3], x_shape[4])
+                x = self.backbone(x)
+                x = x.view(x_shape[0], x_shape[1], x.shape[-1])
+            else:
+                x = self.backbone(x)
+                x = x.unsqueeze(0)
+        else:
+            if len(x.shape) == 1:
+                x = x.reshape(1, 1, -1)
         hidden = torch.transpose(hidden, 0, 1)
         x, hidden = self.gru(x, hidden)
         x = self.head(x)
@@ -95,9 +105,19 @@ class GRUBrain(Brain):
         self, x: torch.Tensor, hidden: torch.Tensor, n_tau_samples: int = None
     ):
         """Get output value for calculating loss."""
-        x = self.backbone(x)
-        if len(x.shape) == 1:
-            x = x.reshape(1, 1, -1)
+        if isinstance(self.backbone, nn.Module):
+            if len(x.shape) > 4:
+                x = x.contiguous()
+                x_shape = x.shape
+                x = x.view(-1, x_shape[2], x_shape[3], x_shape[4])
+                x = self.backbone(x)
+                x = x.view(x_shape[0], x_shape[1], x.shape[-1])
+            else:
+                x = self.backbone(x)
+                x = x.unsqueeze(0)
+        else:
+            if len(x.shape) == 1:
+                x = x.reshape(1, 1, -1)
         hidden = torch.transpose(hidden, 0, 1)
         x, hidden = self.gru(x, hidden)
         if isinstance(self.head, IQNMLP):
