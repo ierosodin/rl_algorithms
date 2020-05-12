@@ -117,14 +117,7 @@ class RecurrentReplayBuffer:
         if done and self.idx < self.sequence_size:
             self.length_buf[self.episode_idx] = self.idx
             while self.idx < self.sequence_size:
-                self.local_obs_buf[self.idx] = np.zeros(self.init_state.shape)
-                self.local_acts_buf[self.idx] = np.zeros(self.init_action.shape)
-                self.local_rews_buf[self.idx] = 0
-                self.local_hiddens_buf[self.idx] = torch.zeros(
-                    self.init_hidden.shape
-                ).to(device)
-                self.local_done_buf[self.idx] = False
-                self.idx += 1
+                self.idx = self.sequence_size
 
         if self.idx % self.sequence_size == 0:
             self.obs_buf[self.episode_idx] = self.local_obs_buf
