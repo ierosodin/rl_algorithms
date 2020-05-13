@@ -116,8 +116,7 @@ class RecurrentReplayBuffer:
         self.idx += 1
         if done and self.idx < self.sequence_size:
             self.length_buf[self.episode_idx] = self.idx
-            while self.idx < self.sequence_size:
-                self.idx = self.sequence_size
+            self.idx = self.sequence_size
 
         if self.idx % self.sequence_size == 0:
             self.obs_buf[self.episode_idx] = self.local_obs_buf
