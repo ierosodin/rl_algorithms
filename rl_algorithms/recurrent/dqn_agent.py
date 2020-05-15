@@ -301,7 +301,7 @@ class R2D1Agent(DQNAgent):
                 state = next_state
                 act_onehot = torch.zeros(self.action_dim)
                 act_onehot.scatter(-1, torch.as_tensor(action), 1).to(device)
-                prev_reward = torch.as_tensor().to(device)
+                prev_reward = torch.as_tensor(reward).to(device)
                 score += reward
                 step += 1
 
