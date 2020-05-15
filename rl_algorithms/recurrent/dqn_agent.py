@@ -244,8 +244,9 @@ class R2D1Agent(DQNAgent):
                     )
                 hidden_in = hidden_out
                 state = next_state
-                act_onehot = torch.zeros(self.action_dim)
-                act_onehot.scatter(-1, torch.as_tensor(action), 1).to(device)
+                prev_action = common_utils.make_one_hot(
+                    torch.as_tensor(action), self.action_dim
+                )
                 prev_reward = torch.as_tensor(reward).to(device)
                 score += reward
 
@@ -299,8 +300,9 @@ class R2D1Agent(DQNAgent):
 
                 hidden_in = hidden_out
                 state = next_state
-                act_onehot = torch.zeros(self.action_dim)
-                act_onehot.scatter(-1, torch.as_tensor(action), 1).to(device)
+                prev_action = common_utils.make_one_hot(
+                    torch.as_tensor(action), self.action_dim
+                )
                 prev_reward = torch.as_tensor(reward).to(device)
                 score += reward
                 step += 1
