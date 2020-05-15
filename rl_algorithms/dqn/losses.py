@@ -12,6 +12,7 @@ from typing import Tuple
 import torch
 import torch.nn.functional as F
 
+from rl_algorithms.common.helper_functions import make_one_hot
 from rl_algorithms.common.networks.brain import Brain
 from rl_algorithms.registry import LOSSES
 from rl_algorithms.utils.config import ConfigDict
@@ -277,43 +278,22 @@ class R2D1Loss:
         agent_states = states[:, head_cfg.configs.burn_in_step : -1]
         target_states = states[:, head_cfg.configs.burn_in_step + 1 :]
 
-        burnin_prev_actions = actions[:, : head_cfg.configs.burn_in_step - 1].unsqueeze(
-            -1
+        burnin_prev_actions = make_one_hot(
+            actions[:, : head_cfg.configs.burn_in_step - 1],
+            head_cfg.configs.output_size,
         )
-        target_burnin_prev_actions = actions[
-            :, : head_cfg.configs.burn_in_step
-        ].unsqueeze(-1)
-        agent_actions = (
-            actions[:, head_cfg.configs.burn_in_step : -1].long().unsqueeze(-1)
+        target_burnin_prev_actions = make_one_hot(
+            actions[:, : head_cfg.configs.burn_in_step], head_cfg.configs.output_size
         )
-        prev_actions = actions[:, head_cfg.configs.burn_in_step - 1 : -2].unsqueeze(-1)
+        agent_actions = make_one_hot(
+            actions[:, head_cfg.configs.burn_in_step : -1].long(),
+            head_cfg.configs.output_size,
+        )
+        prev_actions = make_one_hot(
+            actions[:, head_cfg.configs.burn_in_step - 1 : -2],
+            head_cfg.configs.output_size,
+        )
         target_prev_actions = agent_actions
-
-        bpa = torch.zeros(
-            burnin_prev_actions.shape[0],
-            burnin_prev_actions.shape[1],
-            head_cfg.configs.output_size,
-        ).to(device)
-        bpa.scatter(-1, burnin_prev_actions.type(torch.long), 1).to(device)
-
-        tbpa = torch.zeros(
-            target_burnin_prev_actions.shape[0],
-            target_burnin_prev_actions.shape[1],
-            head_cfg.configs.output_size,
-        ).to(device)
-        tbpa.scatter(-1, target_burnin_prev_actions.type(torch.long), 1).to(device)
-
-        pa = torch.zeros(
-            prev_actions.shape[0], prev_actions.shape[1], head_cfg.configs.output_size
-        ).to(device)
-        pa.scatter(-1, prev_actions.type(torch.long), 1).to(device)
-
-        tpa = torch.zeros(
-            target_prev_actions.shape[0],
-            target_prev_actions.shape[1],
-            head_cfg.configs.output_size,
-        ).to(device)
-        tpa.scatter(-1, target_prev_actions.type(torch.long), 1).to(device)
 
         burnin_prev_rewards = rewards[:, : head_cfg.configs.burn_in_step - 1].unsqueeze(
             -1
@@ -330,10 +310,13 @@ class R2D1Loss:
 
         with torch.no_grad():
             _, target_rnn_state = target_model(
-                target_burnin_states, init_rnn_state, tbpa, target_burnin_prev_rewards
+                target_burnin_states,
+                init_rnn_state,
+                target_burnin_prev_actions,
+                target_burnin_prev_rewards,
             )
             _, init_rnn_state = model(
-                burnin_states, init_rnn_state, bpa, burnin_prev_rewards
+                burnin_states, init_rnn_state, burnin_prev_actions, burnin_prev_rewards
             )
 
             init_rnn_state = torch.transpose(init_rnn_state, 0, 1)
@@ -344,13 +327,18 @@ class R2D1Loss:
         init_rnn_state[burnin_invalid_mask] = 0
         target_rnn_state[burnin_invalid_mask] = 0
 
-        qs, _ = model(agent_states, init_rnn_state, pa, prev_rewards)
+        qs, _ = model(agent_states, init_rnn_state, prev_actions, prev_rewards)
         q = qs.gather(-1, agent_actions)
         with torch.no_grad():
             target_qs, _ = target_model(
-                target_states, target_rnn_state, tpa, target_prev_rewards
+                target_states,
+                target_rnn_state,
+                target_prev_actions,
+                target_prev_rewards,
             )
-            next_qs, _ = model(target_states, target_rnn_state, pa, prev_rewards)
+            next_qs, _ = model(
+                target_states, target_rnn_state, prev_actions, prev_rewards
+            )
             next_a = torch.argmax(next_qs, dim=-1)
             target_q = target_qs.gather(-1, next_a.unsqueeze(-1))  # Double DQN
 
