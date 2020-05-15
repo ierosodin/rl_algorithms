@@ -62,25 +62,42 @@ class GRUBrain(Brain):
     def __init__(
         self, backbone_cfg: ConfigDict, head_cfg: ConfigDict,
     ):
+        self.action_size = head_cfg.configs.output_size
         """Initialize."""
         super(GRUBrain, self).__init__(backbone_cfg, head_cfg)
         if not backbone_cfg:
             self.backbone = identity
             head_cfg.configs.input_size = head_cfg.configs.state_size[0]
+            self.fc = nn.Linear(
+                head_cfg.configs.input_size, head_cfg.configs.rnn_hidden_size,
+            )
+            self.gru = nn.GRU(
+                head_cfg.configs.rnn_hidden_size
+                + self.action_size
+                + 1,  # 1 is for prev_reward
+                head_cfg.configs.rnn_hidden_size,
+                batch_first=True,
+            )
         else:
             self.backbone = build_backbone(backbone_cfg)
             head_cfg.configs.input_size = self.calculate_fc_input_size(
                 head_cfg.configs.state_size
             )
-        self.gru = nn.GRU(
-            head_cfg.configs.input_size,
-            head_cfg.configs.rnn_hidden_size,
-            batch_first=True,
-        )
+            self.fc = nn.Linear(
+                head_cfg.configs.input_size, head_cfg.configs.rnn_hidden_size,
+            )
+            self.gru = nn.GRU(
+                head_cfg.configs.rnn_hidden_size
+                + self.action_size
+                + 1,  # 1 is for prev_reward
+                head_cfg.configs.rnn_hidden_size,
+                batch_first=True,
+            )
+
         head_cfg.configs.input_size = head_cfg.configs.rnn_hidden_size
         self.head = build_head(head_cfg)
 
-    def forward(self, x: torch.Tensor, hidden: torch.Tensor):
+    def forward(self, x: torch.Tensor, hidden: torch.Tensor, prev_action, prev_reward):
         def infer_leading_dims(tensor, dim):
             """Looks for up to two leading dimensions in ``tensor``, before
             the data dimensions, of which there are assumed to be ``dim`` number.
@@ -119,12 +136,27 @@ class GRUBrain(Brain):
                 tensors = tuple(t.squeeze(0) for t in tensors)
             return tensors if is_seq else tensors[0]
 
-        img = x / 255.0
-        lead_dim, T, B, img_shape = infer_leading_dims(img, 3)
+        if isinstance(self.backbone, nn.Module):
+            x = x / 255.0
+            lead_dim, T, B, x_shape = infer_leading_dims(x, 3)
 
-        conv_out = self.backbone(img.view(T * B, *img_shape))  # Fold if T dimension.
-
-        lstm_input = conv_out.view(T, B, -1)
+            backbone_out = self.backbone(
+                x.view(T * B, *x_shape)
+            )  # Fold if T dimension.
+        else:
+            if len(x.shape) == 1:
+                x = x.reshape(1, 1, -1)
+            lead_dim, T, B, x_shape = infer_leading_dims(x, 1)
+            backbone_out = x
+        lstm_input = self.fc(backbone_out)
+        lstm_input = torch.cat(
+            [
+                lstm_input.view(T, B, -1),
+                prev_action.view(T, B, -1),
+                prev_reward.view(T, B, 1),
+            ],
+            dim=2,
+        )
         hidden = torch.transpose(hidden, 0, 1)
         hidden = None if hidden is None else hidden
         lstm_out, hidden = self.gru(lstm_input, hidden)
@@ -177,22 +209,32 @@ class GRUBrain(Brain):
                 tensors = tuple(t.squeeze(0) for t in tensors)
             return tensors if is_seq else tensors[0]
 
-        img = x / 255.0
-        lead_dim, T, B, img_shape = infer_leading_dims(img, 3)
+        if isinstance(self.backbone, nn.Module):
+            img = x / 255.0
+            lead_dim, T, B, img_shape = infer_leading_dims(img, 3)
 
-        conv_out = self.backbone(img.view(T * B, *img_shape))  # Fold if T dimension.
+            conv_out = self.backbone(
+                img.view(T * B, *img_shape)
+            )  # Fold if T dimension.
 
-        lstm_input = conv_out.view(T, B, -1)
-        hidden = torch.transpose(hidden, 0, 1)
-        hidden = None if hidden is None else hidden
-        lstm_out, hidden = self.gru(lstm_input, hidden)
+            lstm_input = conv_out.view(T, B, -1)
+            hidden = torch.transpose(hidden, 0, 1)
+            hidden = None if hidden is None else hidden
+            lstm_out, hidden = self.gru(lstm_input, hidden)
 
-        q = self.head(lstm_out.view(T * B, -1))
+            q = self.head(lstm_out.view(T * B, -1))
 
-        # Restore leading dimensions: [T,B], [B], or [], as input.
-        q = restore_leading_dims(q, lead_dim, T, B)
+            # Restore leading dimensions: [T,B], [B], or [], as input.
+            q = restore_leading_dims(q, lead_dim, T, B)
 
-        return q, hidden
+            return q, hidden
+        else:
+            if len(x.shape) == 1:
+                x = x.reshape(1, 1, -1)
+            hidden = torch.transpose(hidden, 0, 1)
+            x, hidden = self.gru(x, hidden)
+            x = self.head(x)
+            return x, hidden
 
     def calculate_fc_input_size(self, state_dim: tuple):
         """Calculate fc input size according to the shape of cnn."""
