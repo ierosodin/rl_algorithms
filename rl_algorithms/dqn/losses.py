@@ -285,15 +285,17 @@ class R2D1Loss:
         target_burnin_prev_actions = make_one_hot(
             actions[:, : head_cfg.configs.burn_in_step], head_cfg.configs.output_size
         )
-        agent_actions = make_one_hot(
-            actions[:, head_cfg.configs.burn_in_step : -1].long(),
-            head_cfg.configs.output_size,
+        agent_actions = (
+            actions[:, head_cfg.configs.burn_in_step : -1].long().unsqueeze(-1)
         )
         prev_actions = make_one_hot(
             actions[:, head_cfg.configs.burn_in_step - 1 : -2],
             head_cfg.configs.output_size,
         )
-        target_prev_actions = agent_actions
+        target_prev_actions = make_one_hot(
+            actions[:, head_cfg.configs.burn_in_step : -1].long(),
+            head_cfg.configs.output_size,
+        )
 
         burnin_prev_rewards = rewards[:, : head_cfg.configs.burn_in_step - 1].unsqueeze(
             -1
