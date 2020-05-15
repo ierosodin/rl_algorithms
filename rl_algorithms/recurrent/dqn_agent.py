@@ -82,7 +82,11 @@ class R2D1Agent(DQNAgent):
             self.load_params(self.args.load_from)
 
     def select_action(
-        self, state: np.ndarray, hidden_state: torch.Tensor
+        self,
+        state: np.ndarray,
+        hidden_state: torch.Tensor,
+        prev_action: torch.Tensor,
+        prev_reward: np.ndarray,
     ) -> np.ndarray:
         """Select an action from the input space."""
         self.curr_state = state
@@ -90,7 +94,9 @@ class R2D1Agent(DQNAgent):
         # epsilon greedy policy
         # pylint: disable=comparison-with-callable
         state = self._preprocess_state(state)
-        selected_action, hidden_state = self.dqn(state, hidden_state)
+        selected_action, hidden_state = self.dqn(
+            state, hidden_state, prev_action, prev_reward
+        )
         selected_action = selected_action.detach().argmax().cpu().numpy()
         if not self.args.test and self.epsilon > np.random.random():
             selected_action = np.array(self.env.action_space.sample())
@@ -198,6 +204,8 @@ class R2D1Agent(DQNAgent):
             hidden_in = torch.zeros(
                 [1, 1, self.head_cfg.configs.rnn_hidden_size], dtype=torch.float
             ).to(device)
+            prev_action = torch.zeros(1, 1, self.action_dim).to(device)
+            prev_reward = torch.zeros(1, 1, 1).to(device)
             self.episode_step = 0
             self.sequence_step = 0
             losses = list()
@@ -210,7 +218,9 @@ class R2D1Agent(DQNAgent):
                 if self.args.render and self.i_episode >= self.args.render_after:
                     self.env.render()
 
-                action, hidden_out = self.select_action(state, hidden_in)
+                action, hidden_out = self.select_action(
+                    state, hidden_in, prev_action, prev_reward
+                )
                 next_state, reward, done, _ = self.step(action, hidden_in)
                 self.total_step += 1
                 self.episode_step += 1
@@ -234,6 +244,9 @@ class R2D1Agent(DQNAgent):
                     )
                 hidden_in = hidden_out
                 state = next_state
+                act_onehot = torch.zeros(self.action_dim)
+                act_onehot.scatter(-1, torch.as_tensor(action), 1).to(device)
+                prev_reward = torch.as_tensor(reward).to(device)
                 score += reward
 
             t_end = time.time()
@@ -268,6 +281,8 @@ class R2D1Agent(DQNAgent):
             hidden_in = torch.zeros(
                 [1, 1, self.head_cfg.configs.rnn_hidden_size], dtype=torch.float
             ).to(device)
+            prev_action = torch.zeros(1, 1, self.action_dim).to(device)
+            prev_reward = torch.zeros(1, 1, 1).to(device)
             state = self.env.reset()
             done = False
             score = 0
@@ -277,11 +292,16 @@ class R2D1Agent(DQNAgent):
                 if self.args.render:
                     self.env.render()
 
-                action, hidden_out = self.select_action(state, hidden_in)
+                action, hidden_out = self.select_action(
+                    state, hidden_in, prev_action, prev_reward
+                )
                 next_state, reward, done, _ = self.step(action, hidden_in)
 
                 hidden_in = hidden_out
                 state = next_state
+                act_onehot = torch.zeros(self.action_dim)
+                act_onehot.scatter(-1, torch.as_tensor(action), 1).to(device)
+                prev_reward = torch.as_tensor().to(device)
                 score += reward
                 step += 1
 
