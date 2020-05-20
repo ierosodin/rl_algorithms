@@ -131,3 +131,19 @@ def restore_leading_dims(tensors, lead_dim, T=1, B=1):
         assert B == 1
         tensors = tuple(t.squeeze(0) for t in tensors)
     return tensors if is_seq else tensors[0]
+
+
+def valid_from_done(done):
+    """Returns a float mask which is zero for all time-steps after a
+    `done=True` is signaled.  This function operates on the leading dimension
+    of `done`, assumed to correspond to time [T,...], other dimensions are
+    preserved.
+    Cloned at rlpyt repo:
+        https://github.com/astooke/rlpyt/blob/master/rlpyt/algos/utils.py
+    """
+    done = done.type(torch.float).squeeze()
+    valid = torch.ones_like(done)
+    valid[:, 1:] = 1 - torch.clamp(torch.cumsum(done[:, :-1], dim=0), max=1)
+    valid = valid[:, -1] == 0
+    valid = valid.unsqueeze(-1)
+    return valid
