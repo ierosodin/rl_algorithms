@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Prioritized Replay buffer for algorithms.
+"""Recurrent Prioritized Replay buffer for algorithms.
 - Author: Kyunghwan Kim
 - Contact: kh.kim@medipixel.io
 - Paper: https://arxiv.org/pdf/1511.05952.pdf

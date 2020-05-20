@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""DQfD agent using demo agent for episodic tasks in OpenAI Gym.
-- Author: Kyunghwan Kim, Curt Park
-- Contact: kh.kim@medipixel.io, curt.park@medipixel.io
-- Paper: https://arxiv.org/pdf/1704.03732.pdf (DQfD)
+"""R2D1 agent, which implement R2D2 but without distributed actor.
+- Author: Kyunghwan Kim, Curt Park, Euijin Jeong
+- Contact:kh.kim@medipixel.io, curt.park@medipixel.io, euijin.jeong@medipixel.io
+- Paper: https://openreview.net/pdf?id=r1lyTjAqYX (R2D1)
 """
 
 import time
@@ -28,9 +28,11 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 @AGENTS.register_module
 class R2D1Agent(DQNAgent):
-    """DQN interacting with environment.
+    """R2D1 interacting with environment.
+
     Attribute:
-        memory (PrioritizedReplayBuffer): replay memory
+        memory (RecurrentPrioritizedReplayBuffer): replay memory for recurrent agent
+        memory_n (RecurrentReplayBuffer): nstep replay memory for recurrent agent
     """
 
     # pylint: disable=attribute-defined-outside-init

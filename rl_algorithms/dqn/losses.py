@@ -257,13 +257,16 @@ class R2D1Loss:
         gamma: float,
         head_cfg: ConfigDict,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Return element-wise R2D1 loss and Q-values."""
+        """Return R2D1 loss and Q-values."""
 
         def valid_from_done(done):
             """Returns a float mask which is zero for all time-steps after a
             `done=True` is signaled.  This function operates on the leading dimension
             of `done`, assumed to correspond to time [T,...], other dimensions are
-            preserved."""
+            preserved.
+            Cloned at rlpyt repo:
+             https://github.com/astooke/rlpyt/blob/master/rlpyt/algos/utils.py
+            """
             done = done.type(torch.float).squeeze()
             valid = torch.ones_like(done)
             valid[:, 1:] = 1 - torch.clamp(torch.cumsum(done[:, :-1], dim=0), max=1)
@@ -324,7 +327,6 @@ class R2D1Loss:
             init_rnn_state = torch.transpose(init_rnn_state, 0, 1)
             target_rnn_state = torch.transpose(target_rnn_state, 0, 1)
 
-        # rlpyt에서 warmup_invalid_mask 적용. 원리는 잘 모르겠음.
         burnin_invalid_mask = valid_from_done(dones[:, : head_cfg.configs.burn_in_step])
         init_rnn_state[burnin_invalid_mask] = 0
         target_rnn_state[burnin_invalid_mask] = 0
@@ -342,7 +344,7 @@ class R2D1Loss:
                 target_states, target_rnn_state, prev_actions, prev_rewards
             )
             next_a = torch.argmax(next_qs, dim=-1)
-            target_q = target_qs.gather(-1, next_a.unsqueeze(-1))  # Double DQN
+            target_q = target_qs.gather(-1, next_a.unsqueeze(-1))
 
         target = agent_rewards + gamma * target_q
         dq_loss_element_wise = F.smooth_l1_loss(q, target.detach(), reduction="none")

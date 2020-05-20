@@ -1,6 +1,6 @@
-"""Config for DQN on LunarLander-v2.
-- Author: Kyunghwan Kim
-- Contact: kh.kim@medipixel.io
+"""Config for R2D1 on LunarLander-v2.
+- Author: Kyunghwan Kim, Euijin Jeong
+- Contact: kh.kim@medipixel.io, euijin.jeong@medipixel.io
 """
 from rl_algorithms.common.helper_functions import identity
 
