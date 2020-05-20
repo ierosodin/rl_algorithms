@@ -12,7 +12,7 @@ from typing import Tuple
 import torch
 import torch.nn.functional as F
 
-from rl_algorithms.common.helper_functions import make_one_hot
+from rl_algorithms.common.helper_functions import make_one_hot, valid_from_done
 from rl_algorithms.common.networks.brain import Brain
 from rl_algorithms.registry import LOSSES
 from rl_algorithms.utils.config import ConfigDict
@@ -258,21 +258,6 @@ class R2D1Loss:
         head_cfg: ConfigDict,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Return R2D1 loss and Q-values."""
-
-        def valid_from_done(done):
-            """Returns a float mask which is zero for all time-steps after a
-            `done=True` is signaled.  This function operates on the leading dimension
-            of `done`, assumed to correspond to time [T,...], other dimensions are
-            preserved.
-            Cloned at rlpyt repo:
-             https://github.com/astooke/rlpyt/blob/master/rlpyt/algos/utils.py
-            """
-            done = done.type(torch.float).squeeze()
-            valid = torch.ones_like(done)
-            valid[:, 1:] = 1 - torch.clamp(torch.cumsum(done[:, :-1], dim=0), max=1)
-            valid = valid[:, -1] == 0
-            valid = valid.unsqueeze(-1)
-            return valid
 
         states, actions, rewards, hiddens, dones, _ = experiences[:6]
 
