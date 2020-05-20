@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Replay buffer for baselines."""
+"""Recurrent Replay buffer for baselines."""
 
 from collections import deque
 import random
@@ -26,6 +26,8 @@ class RecurrentReplayBuffer:
         gamma (float): discount factor
         buffer_size (int): size of buffers
         batch_size (int): batch size for training
+        sequence_size (int): sequence size for unrolling recurrent network
+        overlap_size (int): overlapping size between the sequences
         demo_size (int): size of demo transitions
         length (int): amount of memory filled
         idx (int): memory index to add the next incoming transition
@@ -45,6 +47,8 @@ class RecurrentReplayBuffer:
         Args:
             buffer_size (int): size of replay buffer for experience
             batch_size (int): size of a batched sampled from replay buffer for training
+            sequence_size (int): sequence size for unrolling recurrent network
+            overlap_size (int): overlapping size between the sequences
             gamma (float): discount factor
             n_step (int): step size for n-step transition
             demo (list): transitions of human play
@@ -92,6 +96,8 @@ class RecurrentReplayBuffer:
     ) -> Tuple[Any, ...]:  # delete here
         """Add a new experience to memory.
         If the buffer is empty, it is respectively initialized by size of arguments.
+        Add transitions to local buffer until it's full,
+        and move thoese transitions to global buffer.
         """
         self.n_step_buffer.append(transition)
 
@@ -170,6 +176,7 @@ class RecurrentReplayBuffer:
         return states, actions, rewards, hidden_state, dones, lengths
 
     def _initialize_local_buffers(self):
+        """Initialze global buffers for state, action, resward, hidden_state, done."""
         self.local_obs_buf = np.zeros(
             [self.sequence_size] + list(self.init_state.shape),
             dtype=self.init_state.dtype,
@@ -187,6 +194,7 @@ class RecurrentReplayBuffer:
         self.local_done_buf = np.zeros([self.sequence_size], dtype=float)
 
     def _overlap_local_buffers(self):
+        """Overlap the local buffers when the local buffers are full."""
         overlap_obs_buf = self.local_obs_buf[-self.overlap_size :]
         overlap_acts_buf = self.local_acts_buf[-self.overlap_size :]
         overlap_hiddens_buf = self.local_hiddens_buf[-self.overlap_size :]
@@ -203,7 +211,7 @@ class RecurrentReplayBuffer:
     def _initialize_buffers(
         self, state: np.ndarray, action: np.ndarray, hidden: torch.Tensor
     ) -> None:
-        """Initialze buffers for state, action, resward, hidden_state, done."""
+        """Initialze global buffers for state, action, resward, hidden_state, done."""
         # In case action of demo is not np.ndarray
         self.init_state = state
         self.init_action = action

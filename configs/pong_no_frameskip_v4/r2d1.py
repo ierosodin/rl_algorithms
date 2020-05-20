@@ -1,6 +1,6 @@
-"""Config for DQN on LunarLander-v2.
-- Author: Kyunghwan Kim
-- Contact: kh.kim@medipixel.io
+"""Config for R2D1 on PongNoFrameskip-v4.
+- Author: Kyunghwan Kim, Euijin Jeong
+- Contact: kh.kim@medipixel.io, euijin.jeong@medipixel.io
 """
 from rl_algorithms.common.helper_functions import identity
 
@@ -11,7 +11,7 @@ agent = dict(
         tau=5e-3,
         buffer_size=int(4e3),  # openai baselines: int(1e4)
         batch_size=32,  # openai baselines: 32
-        update_starts_from=int(4e3),  # openai baselines: int(1e4)
+        update_starts_from=int(32),  # openai baselines: int(1e4)
         multiple_update=1,  # multiple learning updates
         train_freq=4,  # in openai baselines, train_freq = 4
         gradient_clip=10.0,  # dueling: 10.0
