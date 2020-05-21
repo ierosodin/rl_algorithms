@@ -176,14 +176,21 @@ class GRUBrain(Brain):
         lstm_out, hidden = self.gru(lstm_input, hidden)
 
         if isinstance(self.head, IQNMLP):
-            q = self.head.forward_(lstm_out.contiguous().view(T * B, -1), n_tau_samples)
+            quantile_values, quantiles = self.head.forward_(
+                lstm_out.contiguous().view(T * B, -1), n_tau_samples
+            )
         else:
-            q = self.head.forward_(lstm_out.contiguous().view(T * B, -1))
+            quantile_values, quantiles = self.head.forward_(
+                lstm_out.contiguous().view(T * B, -1)
+            )
 
         # Restore leading dimensions: [T,B], [B], or [], as input.
-        q = restore_leading_dims(q, lead_dim, T, B)
+        quantile_values = restore_leading_dims(
+            quantile_values, lead_dim, T * n_tau_samples, B
+        )
+        quantiles = restore_leading_dims(quantiles, lead_dim, T * n_tau_samples, B)
 
-        return q, hidden
+        return quantile_values, quantiles, hidden
 
     def calculate_fc_input_size(self, state_dim: tuple):
         """Calculate fc input size according to the shape of cnn."""
