@@ -247,6 +247,61 @@ class DQNLoss:
         return dq_loss_element_wise, q_values
 
 
+def slice_r2d2_arguments(experiences, head_cfg):
+    states, actions, rewards, hiddens, dones, _ = experiences[:6]
+
+    burnin_states = states[:, 1 : head_cfg.configs.burn_in_step]
+    target_burnin_states = states[:, 1 : head_cfg.configs.burn_in_step + 1]
+    agent_states = states[:, head_cfg.configs.burn_in_step : -1]
+    target_states = states[:, head_cfg.configs.burn_in_step + 1 :]
+
+    burnin_prev_actions = make_one_hot(
+        actions[:, : head_cfg.configs.burn_in_step - 1], head_cfg.configs.output_size,
+    )
+    target_burnin_prev_actions = make_one_hot(
+        actions[:, : head_cfg.configs.burn_in_step], head_cfg.configs.output_size
+    )
+    agent_actions = actions[:, head_cfg.configs.burn_in_step : -1].long().unsqueeze(-1)
+    prev_actions = make_one_hot(
+        actions[:, head_cfg.configs.burn_in_step - 1 : -2],
+        head_cfg.configs.output_size,
+    )
+    target_prev_actions = make_one_hot(
+        actions[:, head_cfg.configs.burn_in_step : -1].long(),
+        head_cfg.configs.output_size,
+    )
+
+    burnin_prev_rewards = rewards[:, : head_cfg.configs.burn_in_step - 1].unsqueeze(-1)
+    target_burnin_prev_rewards = rewards[:, : head_cfg.configs.burn_in_step].unsqueeze(
+        -1
+    )
+    agent_rewards = rewards[:, head_cfg.configs.burn_in_step : -1].unsqueeze(-1)
+    prev_rewards = rewards[:, head_cfg.configs.burn_in_step - 1 : -2].unsqueeze(-1)
+    target_prev_rewards = agent_rewards
+
+    dones = dones[:, head_cfg.configs.burn_in_step : -1].unsqueeze(-1)
+    init_rnn_state = hiddens[:, 0].squeeze(1).contiguous()
+
+    return (
+        burnin_states,
+        target_burnin_states,
+        agent_states,
+        target_states,
+        burnin_prev_actions,
+        target_burnin_prev_actions,
+        agent_actions,
+        prev_actions,
+        target_prev_actions,
+        burnin_prev_rewards,
+        target_burnin_prev_rewards,
+        agent_rewards,
+        prev_rewards,
+        target_prev_rewards,
+        dones,
+        init_rnn_state,
+    )
+
+
 @LOSSES.register_module
 class R2D1Loss:
     def __call__(
@@ -259,44 +314,24 @@ class R2D1Loss:
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Return R2D1 loss and Q-values."""
 
-        states, actions, rewards, hiddens, dones, _ = experiences[:6]
-
-        burnin_states = states[:, 1 : head_cfg.configs.burn_in_step]
-        target_burnin_states = states[:, 1 : head_cfg.configs.burn_in_step + 1]
-        agent_states = states[:, head_cfg.configs.burn_in_step : -1]
-        target_states = states[:, head_cfg.configs.burn_in_step + 1 :]
-
-        burnin_prev_actions = make_one_hot(
-            actions[:, : head_cfg.configs.burn_in_step - 1],
-            head_cfg.configs.output_size,
-        )
-        target_burnin_prev_actions = make_one_hot(
-            actions[:, : head_cfg.configs.burn_in_step], head_cfg.configs.output_size
-        )
-        agent_actions = (
-            actions[:, head_cfg.configs.burn_in_step : -1].long().unsqueeze(-1)
-        )
-        prev_actions = make_one_hot(
-            actions[:, head_cfg.configs.burn_in_step - 1 : -2],
-            head_cfg.configs.output_size,
-        )
-        target_prev_actions = make_one_hot(
-            actions[:, head_cfg.configs.burn_in_step : -1].long(),
-            head_cfg.configs.output_size,
-        )
-
-        burnin_prev_rewards = rewards[:, : head_cfg.configs.burn_in_step - 1].unsqueeze(
-            -1
-        )
-        target_burnin_prev_rewards = rewards[
-            :, : head_cfg.configs.burn_in_step
-        ].unsqueeze(-1)
-        agent_rewards = rewards[:, head_cfg.configs.burn_in_step : -1].unsqueeze(-1)
-        prev_rewards = rewards[:, head_cfg.configs.burn_in_step - 1 : -2].unsqueeze(-1)
-        target_prev_rewards = agent_rewards
-
-        dones = dones[:, head_cfg.configs.burn_in_step : -1].unsqueeze(-1)
-        init_rnn_state = hiddens[:, 0].squeeze(1).contiguous()
+        (
+            burnin_states,
+            target_burnin_states,
+            agent_states,
+            target_states,
+            burnin_prev_actions,
+            target_burnin_prev_actions,
+            agent_actions,
+            prev_actions,
+            target_prev_actions,
+            burnin_prev_rewards,
+            target_burnin_prev_rewards,
+            agent_rewards,
+            prev_rewards,
+            target_prev_rewards,
+            dones,
+            init_rnn_state,
+        ) = slice_r2d2_arguments(experiences, head_cfg)
 
         with torch.no_grad():
             _, target_rnn_state = target_model(
@@ -335,3 +370,180 @@ class R2D1Loss:
         dq_loss_element_wise = F.smooth_l1_loss(q, target.detach(), reduction="none")
         delta = abs(torch.mean(dq_loss_element_wise, dim=1))
         return delta, q
+
+
+@LOSSES.register_module
+class R2D1IQNLoss:
+    def __call__(
+        self,
+        model: Brain,
+        target_model: Brain,
+        experiences: Tuple[torch.Tensor, ...],
+        gamma: float,
+        head_cfg: ConfigDict,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Return R2D1 loss and Q-values."""
+        (
+            burnin_states,
+            target_burnin_states,
+            agent_states,
+            target_states,
+            burnin_prev_actions,
+            target_burnin_prev_actions,
+            agent_actions,
+            prev_actions,
+            target_prev_actions,
+            burnin_prev_rewards,
+            target_burnin_prev_rewards,
+            agent_rewards,
+            prev_rewards,
+            target_prev_rewards,
+            dones,
+            init_rnn_state,
+        ) = slice_r2d2_arguments(experiences, head_cfg)
+
+        batch_size = agent_states.shape[0]
+        sequence_size = agent_states.shape[1]
+
+        with torch.no_grad():
+            _, target_rnn_state = target_model(
+                target_burnin_states,
+                init_rnn_state,
+                target_burnin_prev_actions,
+                target_burnin_prev_rewards,
+            )
+            _, init_rnn_state = model(
+                burnin_states, init_rnn_state, burnin_prev_actions, burnin_prev_rewards
+            )
+
+            init_rnn_state = torch.transpose(init_rnn_state, 0, 1)
+            target_rnn_state = torch.transpose(target_rnn_state, 0, 1)
+
+        burnin_invalid_mask = valid_from_done(dones[:, : head_cfg.configs.burn_in_step])
+        init_rnn_state[burnin_invalid_mask] = 0
+        target_rnn_state[burnin_invalid_mask] = 0
+
+        # size of rewards: (n_tau_prime_samples x batch_size) x 1.
+        agent_rewards = agent_rewards.repeat(head_cfg.configs.n_tau_prime_samples, 1, 1)
+
+        # size of gamma_with_terminal: (n_tau_prime_samples x batch_size) x 1.
+        masks = 1 - dones
+        gamma_with_terminal = masks * gamma
+        gamma_with_terminal = gamma_with_terminal.repeat(
+            head_cfg.configs.n_tau_prime_samples, 1, 1
+        )
+
+        # Get the indices of the maximium Q-value across the action dimension.
+        # Shape of replay_next_qt_argmax: (n_tau_prime_samples x batch_size) x 1.
+        qs, _ = model(
+            target_states, target_rnn_state, target_prev_actions, target_prev_rewards
+        )
+        qs = qs.argmax(dim=-1)
+        qs = qs[:, :, None]
+        qs = qs.repeat(head_cfg.configs.n_tau_prime_samples, 1, 1)
+        with torch.no_grad():
+            # Shape of next_target_values: (n_tau_prime_samples x batch_size) x 1.
+            target_quantile_values, _, _ = target_model.forward_(
+                target_states,
+                target_rnn_state,
+                target_prev_actions,
+                target_prev_rewards,
+                head_cfg.configs.n_tau_prime_samples,
+            )
+        target_quantile_values = target_quantile_values.gather(-1, qs)
+        target_quantile_values = (
+            agent_rewards + gamma_with_terminal * target_quantile_values
+        )
+        target_quantile_values = target_quantile_values.detach()
+
+        # Reshape to n_tau_prime_samples x batch_size x 1 since this is
+        # the manner in which the target_quantile_values are tiled.
+        target_quantile_values = target_quantile_values.view(
+            head_cfg.configs.n_tau_prime_samples, batch_size, sequence_size, 1
+        )
+
+        # Transpose dimensions so that the dimensionality is batch_size x
+        # n_tau_prime_samples x 1 to prepare for computation of Bellman errors.
+        target_quantile_values = torch.transpose(target_quantile_values, 0, 1)
+
+        # Get quantile values: (n_tau_samples x batch_size) x action_dim.
+        quantile_values, quantiles, _ = model.forward_(
+            agent_states,
+            init_rnn_state,
+            prev_actions,
+            prev_rewards,
+            head_cfg.configs.n_tau_samples,
+        )
+        reshaped_actions = agent_actions.repeat(head_cfg.configs.n_tau_samples, 1, 1)
+        chosen_action_quantile_values = quantile_values.gather(
+            -1, reshaped_actions.long()
+        )
+        chosen_action_quantile_values = chosen_action_quantile_values.view(
+            head_cfg.configs.n_tau_samples, batch_size, sequence_size, 1
+        )
+
+        # Transpose dimensions so that the dimensionality is batch_size x
+        # n_tau_prime_samples x 1 to prepare for computation of Bellman errors.
+        chosen_action_quantile_values = torch.transpose(
+            chosen_action_quantile_values, 0, 1
+        )
+
+        # Shape of bellman_erors and huber_loss:
+        # batch_size x num_tau_prime_samples x num_tau_samples x 1.
+        bellman_errors = (
+            target_quantile_values[:, :, None, :]
+            - chosen_action_quantile_values[:, None, :, :]
+        )
+
+        # The huber loss (introduced in QR-DQN) is defined via two cases:
+        # case_one: |bellman_errors| <= kappa
+        # case_two: |bellman_errors| > kappa
+        huber_loss_case_one = (
+            (torch.abs(bellman_errors) <= head_cfg.configs.kappa).float()
+            * 0.5
+            * bellman_errors ** 2
+        )
+        huber_loss_case_two = (
+            (torch.abs(bellman_errors) > head_cfg.configs.kappa).float()
+            * head_cfg.configs.kappa
+            * (torch.abs(bellman_errors) - 0.5 * head_cfg.configs.kappa)
+        )
+        huber_loss = huber_loss_case_one + huber_loss_case_two
+
+        # Reshape quantiles to batch_size x num_tau_samples x 1
+        quantiles = quantiles.view(
+            head_cfg.configs.n_tau_samples, batch_size, sequence_size, 1
+        )
+        quantiles = torch.transpose(quantiles, 0, 1)
+
+        # Tile by num_tau_prime_samples along a new dimension. Shape is now
+        # batch_size x num_tau_prime_samples x num_tau_samples x sequence_length x 1.
+        # These quantiles will be used for computation of the quantile huber loss
+        # below (see section 2.3 of the paper).
+        quantiles = quantiles[:, None, :, :, :].repeat(
+            1, head_cfg.configs.n_tau_prime_samples, 1, 1, 1
+        )
+        quantiles = quantiles.to(device)
+
+        # Shape: batch_size x n_tau_prime_samples x n_tau_samples x sequence_length x 1.
+        quantile_huber_loss = (
+            torch.abs(quantiles - (bellman_errors < 0).float().detach())
+            * huber_loss
+            / head_cfg.configs.kappa
+        )
+
+        # Sum over current quantile value (n_tau_samples) dimension,
+        # average over target quantile value (n_tau_prime_samples) dimension.
+        # Shape: batch_size x n_tau_prime_samples x 1.
+        loss = torch.sum(quantile_huber_loss, dim=2)
+
+        # Shape: batch_size x sequence_length x 1.
+        iqn_loss_element_wise = torch.mean(loss, dim=1)
+
+        # Shape: batch_size x 1.
+        iqn_loss_element_wise = abs(torch.mean(iqn_loss_element_wise, dim=1))
+
+        # q values for regularization.
+        q_values, _ = model(agent_states, init_rnn_state, prev_actions, prev_rewards)
+
+        return iqn_loss_element_wise, q_values
