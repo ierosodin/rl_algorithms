@@ -179,18 +179,18 @@ class GRUBrain(Brain):
             quantile_values, quantiles = self.head.forward_(
                 lstm_out.contiguous().view(T * B, -1), n_tau_samples
             )
-        else:
-            quantile_values, quantiles = self.head.forward_(
-                lstm_out.contiguous().view(T * B, -1)
+            # Restore leading dimensions: [T,B], [B], or [], as input.
+            quantile_values = restore_leading_dims(
+                quantile_values, lead_dim, T * n_tau_samples, B
             )
+            quantiles = restore_leading_dims(quantiles, lead_dim, T * n_tau_samples, B)
 
-        # Restore leading dimensions: [T,B], [B], or [], as input.
-        quantile_values = restore_leading_dims(
-            quantile_values, lead_dim, T * n_tau_samples, B
-        )
-        quantiles = restore_leading_dims(quantiles, lead_dim, T * n_tau_samples, B)
-
-        return quantile_values, quantiles, hidden
+            return quantile_values, quantiles, hidden
+        else:
+            head_out = self.head.forward_(lstm_out.contiguous().view(T * B, -1))
+            if len(head_out) != 2:  # c51의 head_out은 길이가 2인 튜플이기 때문에 c51을 제외하는 조건문.
+                head_out = restore_leading_dims(head_out, lead_dim, T, B)
+            return head_out, hidden
 
     def calculate_fc_input_size(self, state_dim: tuple):
         """Calculate fc input size according to the shape of cnn."""
