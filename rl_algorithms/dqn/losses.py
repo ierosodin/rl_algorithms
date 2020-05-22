@@ -547,3 +547,123 @@ class R2D1IQNLoss:
         q_values, _ = model(agent_states, init_rnn_state, prev_actions, prev_rewards)
 
         return iqn_loss_element_wise, q_values
+
+
+@LOSSES.register_module
+class R2D1C51Loss:
+    def __call__(
+        self,
+        model: Brain,
+        target_model: Brain,
+        experiences: Tuple[torch.Tensor, ...],
+        gamma: float,
+        head_cfg: ConfigDict,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Return element-wise C51 loss and Q-values."""
+        (
+            burnin_states,
+            target_burnin_states,
+            agent_states,
+            target_states,
+            burnin_prev_actions,
+            target_burnin_prev_actions,
+            agent_actions,
+            prev_actions,
+            target_prev_actions,
+            burnin_prev_rewards,
+            target_burnin_prev_rewards,
+            agent_rewards,
+            prev_rewards,
+            target_prev_rewards,
+            dones,
+            init_rnn_state,
+        ) = slice_r2d2_arguments(experiences, head_cfg)
+
+        batch_size = agent_states.shape[0]
+        sequence_size = agent_states.shape[1]
+
+        with torch.no_grad():
+            _, target_rnn_state = target_model(
+                target_burnin_states,
+                init_rnn_state,
+                target_burnin_prev_actions,
+                target_burnin_prev_rewards,
+            )
+            _, init_rnn_state = model(
+                burnin_states, init_rnn_state, burnin_prev_actions, burnin_prev_rewards
+            )
+
+            init_rnn_state = torch.transpose(init_rnn_state, 0, 1)
+            target_rnn_state = torch.transpose(target_rnn_state, 0, 1)
+
+        burnin_invalid_mask = valid_from_done(dones[:, : head_cfg.configs.burn_in_step])
+        init_rnn_state[burnin_invalid_mask] = 0
+        target_rnn_state[burnin_invalid_mask] = 0
+
+        support = torch.linspace(
+            head_cfg.configs.v_min, head_cfg.configs.v_max, head_cfg.configs.atom_size
+        ).to(device)
+        delta_z = float(head_cfg.configs.v_max - head_cfg.configs.v_min) / (
+            head_cfg.configs.atom_size - 1
+        )
+
+        with torch.no_grad():
+            # According to noisynet paper,
+            # it resamples noisynet parameters on online network when using double q
+            # but we don't because there is no remarkable difference in performance.
+            next_actions, _ = model.forward_(
+                target_states,
+                target_rnn_state,
+                target_prev_actions,
+                target_prev_rewards,
+            )
+            next_actions = next_actions[1].argmax(-1)
+            next_dist, _ = target_model.forward_(
+                target_states,
+                target_rnn_state,
+                target_prev_actions,
+                target_prev_rewards,
+            )
+            next_dist = next_dist[0][range(batch_size * sequence_size), next_actions]
+
+            t_z = agent_rewards + (1 - dones) * gamma * support
+            t_z = t_z.clamp(min=head_cfg.configs.v_min, max=head_cfg.configs.v_max)
+            b = (t_z - head_cfg.configs.v_min) / delta_z
+            b = b.view(batch_size * sequence_size, -1)
+            l = b.floor().long()  # noqa: E741
+            u = b.ceil().long()
+
+            offset = (
+                torch.linspace(
+                    0,
+                    (batch_size * sequence_size - 1) * head_cfg.configs.atom_size,
+                    batch_size * sequence_size,
+                )
+                .long()
+                .unsqueeze(1)
+            )
+            offset = offset.expand(
+                batch_size * sequence_size, head_cfg.configs.atom_size
+            ).to(device)
+            proj_dist = torch.zeros(next_dist.size(), device=device)
+            proj_dist.view(-1).index_add_(
+                0, (l + offset).view(-1), (next_dist * (u.float() - b)).view(-1)
+            )
+            proj_dist.view(-1).index_add_(
+                0, (u + offset).view(-1), (next_dist * (b - l.float())).view(-1)
+            )
+
+        (dist, q_values), _ = model.forward_(
+            agent_states, init_rnn_state, prev_actions, prev_rewards
+        )
+        log_p = torch.log(
+            dist[
+                range(batch_size * sequence_size),
+                agent_actions.contiguous().view(batch_size * sequence_size).long(),
+            ]
+        )
+        log_p = log_p.view(batch_size, sequence_size, -1)
+        proj_dist = proj_dist.view(batch_size, sequence_size, -1)
+        dq_loss_element_wise = abs(-(proj_dist * log_p).sum(-1).mean(1))
+
+        return dq_loss_element_wise, q_values
