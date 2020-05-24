@@ -1,4 +1,4 @@
-"""Config for R2D1 on LunarLander-v2.
+"""Config for R2D1IQN on PongNoFrameSkip-v2.
 - Author: Kyunghwan Kim, Euijin Jeong
 - Contact: kh.kim@medipixel.io, euijin.jeong@medipixel.io
 """
@@ -13,7 +13,7 @@ agent = dict(
         batch_size=32,  # openai baselines: 32
         update_starts_from=int(4e3),  # openai baselines: int(1e4)
         multiple_update=1,  # multiple learning updates
-        train_freq=1,  # in openai baselines, train_freq = 4
+        train_freq=4,  # in openai baselines, train_freq = 4
         gradient_clip=10.0,  # dueling: 10.0
         n_step=3,
         w_n_step=1.0,
@@ -22,8 +22,8 @@ agent = dict(
         per_beta=0.4,
         per_eps=1e-6,
         # R2D1
-        sequence_size=22,
-        overlap_size=11,
+        sequence_size=20,
+        overlap_size=10,
         loss_type=dict(type="R2D1IQNLoss"),
         # Epsilon Greedy
         max_epsilon=1.0,
@@ -49,9 +49,9 @@ agent = dict(
     head=dict(
         type="IQNMLP",
         configs=dict(
-            rnn_hidden_size=72,
-            burn_in_step=11,
-            hidden_sizes=[128, 64],
+            rnn_hidden_size=512,
+            burn_in_step=10,
+            hidden_sizes=[512],
             n_tau_samples=64,
             n_tau_prime_samples=64,
             n_quantile_samples=32,

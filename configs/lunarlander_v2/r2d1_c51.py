@@ -1,7 +1,7 @@
-"""Config for DQN on Pong-No_FrameSkip-v4.
+"""Config for R2D1C51 on Pong-No_FrameSkip-v4.
 
-- Author: Kyunghwan Kim
-- Contact: kh.kim@medipixel.io
+- Author: Kyunghwan Kim, Euijin Jeong
+- Contact: kh.kim@medipixel.io, euijin.jeong@medipixel.io
 """
 from rl_algorithms.common.helper_functions import identity
 

@@ -22,8 +22,8 @@ agent = dict(
         per_beta=0.4,
         per_eps=1e-7,
         # R2D1
-        sequence_size=32,
-        overlap_size=16,
+        sequence_size=20,
+        overlap_size=10,
         loss_type=dict(type="R2D1Loss"),
         # Epsilon Greedy
         max_epsilon=1.0,
@@ -50,7 +50,7 @@ agent = dict(
         type="DuelingMLP",
         configs=dict(
             rnn_hidden_size=512,
-            burn_in_step=16,
+            burn_in_step=10,
             hidden_sizes=[512],
             use_noisy_net=False,
             output_activation=identity,

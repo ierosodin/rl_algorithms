@@ -1,7 +1,7 @@
-"""Config for DQN on Pong-No_FrameSkip-v4.
+"""Config for R2D1C51 on Pong-No_FrameSkip-v4.
 
-- Author: Kyunghwan Kim
-- Contact: kh.kim@medipixel.io
+- Author: Kyunghwan Kim, Euijin Jeong
+- Contact: kh.kim@medipixel.io, euijin.jeong@medipixel.io
 """
 from rl_algorithms.common.helper_functions import identity
 
@@ -29,7 +29,7 @@ agent = dict(
         # Epsilon Greedy
         max_epsilon=1.0,
         min_epsilon=0.01,  # openai baselines: 0.01
-        epsilon_decay=1e-6,  # openai baselines: 1e-7 / 1e-1
+        epsilon_decay=2e-7,  # openai baselines: 1e-7 / 1e-1
         # grad_cam
         grad_cam_layer_list=[
             "backbone.cnn.cnn_0.cnn",
@@ -58,8 +58,7 @@ agent = dict(
             atom_size=51,
             output_activation=identity,
             # NoisyNet
-            use_noisy_net=True,
-            std_init=0.5,
+            use_noisy_net=False,
         ),
     ),
     optim_cfg=dict(

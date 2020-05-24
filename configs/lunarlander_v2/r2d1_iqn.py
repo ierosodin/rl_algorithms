@@ -1,4 +1,5 @@
-"""Config for R2D1 on LunarLander-v2.
+"""Config for R2D1IQN on LunarLander-v2.
+
 - Author: Kyunghwan Kim, Euijin Jeong
 - Contact: kh.kim@medipixel.io, euijin.jeong@medipixel.io
 """
@@ -10,7 +11,7 @@ agent = dict(
         gamma=0.99,
         tau=5e-3,
         buffer_size=int(1e4),  # openai baselines: int(1e4)
-        batch_size=32,  # openai baselines: 32
+        batch_size=64,  # openai baselines: 32
         update_starts_from=int(1e3),  # openai baselines: int(1e4)
         multiple_update=1,  # multiple learning updates
         train_freq=1,  # in openai baselines, train_freq = 4
@@ -20,7 +21,7 @@ agent = dict(
         w_q_reg=1e-7,
         per_alpha=0.6,  # openai baselines: 0.6
         per_beta=0.4,
-        per_eps=1e-6,
+        per_eps=5e-7,
         # R2D1
         sequence_size=32,
         overlap_size=16,
