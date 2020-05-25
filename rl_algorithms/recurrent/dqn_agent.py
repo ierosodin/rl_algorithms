@@ -108,12 +108,12 @@ class R2D1Agent(DQNAgent):
         """Add 1 step and n step transitions to memory."""
         # add n-step transition
         if self.use_n_step:
-            transition = self.memory_n.add(transition)
+            transition = self.memory_n.add(*transition)
 
         # add a single step transition
         # if transition is not an empty tuple
         if transition:
-            self.memory.add(transition)
+            self.memory.add(*transition)
 
     def step(
         self, action: np.ndarray, hidden_state: torch.Tensor

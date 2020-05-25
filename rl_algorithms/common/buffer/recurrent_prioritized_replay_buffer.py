@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Recurrent Prioritized Replay buffer for algorithms.
-- Author: Kyunghwan Kim
+"""Prioritized Replay buffer for algorithms.
+- Author: Kh Kim
 - Contact: kh.kim@medipixel.io
 - Paper: https://arxiv.org/pdf/1511.05952.pdf
          https://arxiv.org/pdf/1707.08817.pdf
 """
 
 import random
-from typing import Any, List, Tuple
+from typing import List, Tuple
 
 import numpy as np
 import torch
@@ -20,21 +20,21 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class RecurrentPrioritizedReplayBuffer(RecurrentReplayBuffer):
     """Create Prioritized Replay buffer.
-    Refer to OpenAI baselines github repository:
+    Taken from OpenAI baselines github repository:
     https://github.com/openai/baselines/blob/master/baselines/deepq/replay_buffer.py
     Attributes:
+        buffer_size (int): size of replay buffer for experience
         alpha (float): alpha parameter for prioritized replay buffer
-        epsilon_d (float): small positive constants to add to the priorities
         tree_idx (int): next index of tree
         sum_tree (SumSegmentTree): sum tree for prior
         min_tree (MinSegmentTree): min tree for min prior to get max weight
         _max_priority (float): max priority
-    """
+        """
 
     def __init__(
         self,
         buffer_size: int,
-        batch_size: int = 32,
+        batch_size: int,
         sequence_size: int = 80,
         overlap_size: int = 40,
         gamma: float = 0.99,
@@ -43,19 +43,21 @@ class RecurrentPrioritizedReplayBuffer(RecurrentReplayBuffer):
         epsilon_d: float = 1.0,
         demo: List[Tuple[np.ndarray, np.ndarray, float, np.ndarray, bool]] = None,
     ):
-        """Initialize.
+        """Initialization.
         Args:
             buffer_size (int): size of replay buffer for experience
             batch_size (int): size of a batched sampled from replay buffer for training
             alpha (float): alpha parameter for prioritized replay buffer
         """
         super(RecurrentPrioritizedReplayBuffer, self).__init__(
-            buffer_size, batch_size, sequence_size, overlap_size, gamma, n_step, demo
+            buffer_size, batch_size, sequence_size, overlap_size, gamma, n_step
         )
         assert alpha >= 0
+        self.buffer_size = buffer_size
         self.alpha = alpha
         self.epsilon_d = epsilon_d
         self.tree_idx = 0
+        self.demo_size = 0
 
         # capacity must be positive and a power of 2.
         tree_capacity = 1
@@ -66,25 +68,22 @@ class RecurrentPrioritizedReplayBuffer(RecurrentReplayBuffer):
         self.min_tree = MinSegmentTree(tree_capacity)
         self._max_priority = 1.0
 
-        # for init priority of demo
-        self.tree_idx = self.demo_size
-        for i in range(self.demo_size):
-            self.sum_tree[i] = self._max_priority ** self.alpha
-            self.min_tree[i] = self._max_priority ** self.alpha
-
     def add(
-        self, transition: Tuple[np.ndarray, np.ndarray, float, np.ndarray, bool]
-    ) -> Tuple[Any, ...]:
+        self,
+        state: np.ndarray,
+        action: np.ndarray,
+        hidden: torch.Tensor,
+        reward: np.float64,
+        next_state: np.ndarray,
+        done: bool,
+    ):
         """Add experience and priority."""
-        n_step_transition = super().add(transition)
-        if n_step_transition:
-            self.sum_tree[self.tree_idx] = self._max_priority ** self.alpha
-            self.min_tree[self.tree_idx] = self._max_priority ** self.alpha
+        idx = self.tree_idx
+        self.tree_idx = (self.tree_idx + 1) % self.buffer_size
+        n_step_transition = super().add(state, action, hidden, reward, next_state, done)
 
-            self.tree_idx += 1
-            if self.tree_idx % self.buffer_size == 0:
-                self.tree_idx = self.demo_size
-
+        self.sum_tree[idx] = self._max_priority ** self.alpha
+        self.min_tree[idx] = self._max_priority ** self.alpha
         return n_step_transition
 
     def _sample_proportional(self, batch_size: int) -> list:
@@ -101,48 +100,69 @@ class RecurrentPrioritizedReplayBuffer(RecurrentReplayBuffer):
             indices.append(idx)
         return indices
 
-    def sample(self, beta: float = 0.4) -> Tuple[torch.Tensor, ...]:  # type: ignore
+    def sample(self, beta: float = 0.4) -> Tuple[torch.Tensor, ...]:
         """Sample a batch of experiences."""
         assert len(self) >= self.batch_size
         assert beta > 0
 
         indices = self._sample_proportional(self.batch_size)
+        states, actions, rewards, hiddens, dones, weights, eps_d = (
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+        )
 
         # get max weight
         p_min = self.min_tree.min() / self.sum_tree.sum()
-        max_weight = (p_min * len(self)) ** (-beta)
+        max_weight = (p_min * len(self.buffer)) ** (-beta)
 
-        # calculate weights
-        weights_, eps_d = [], []
         for i in indices:
+            s, a, h, r, d = map(list, zip(*self.buffer[i]))
+            states.append(np.array(s, copy=False))
+            actions.append(np.array(a, copy=False))
+            hiddens.append(torch.stack(h))
+            rewards.append(np.array(r, copy=False))
+            dones.append(np.array(d, copy=False, dtype=np.uint8))
+
+            # calculate weights
             eps_d.append(self.epsilon_d if i < self.demo_size else 0.0)
             p_sample = self.sum_tree[i] / self.sum_tree.sum()
-            weight = (p_sample * len(self)) ** (-beta)
-            weights_.append(weight / max_weight)
+            weight = (p_sample * len(self.buffer)) ** (-beta)
+            weights.append(weight / max_weight)
 
-        weights = np.array(weights_)
-        eps_d = np.array(eps_d)
-
-        weights = torch.FloatTensor(weights.reshape(-1, 1)).to(device)
+        states_ = torch.FloatTensor(np.stack(states)).to(device)
+        actions_ = torch.FloatTensor(np.stack(actions)).to(device)
+        hiddens_ = torch.stack(hiddens)
+        rewards_ = torch.FloatTensor(np.stack(rewards)).to(device)
+        dones_ = torch.FloatTensor(np.array(dones)).to(device)
+        weights_ = torch.FloatTensor(np.stack(weights)).to(device)
+        eps_d_ = torch.FloatTensor(np.stack(eps_d)).to(device)
 
         if torch.cuda.is_available():
-            weights = weights.cuda(non_blocking=True)
+            states_ = states_.cuda(non_blocking=True)
+            actions_ = actions_.cuda(non_blocking=True)
+            hiddens_ = hiddens_.cuda(non_blocking=True)
+            rewards_ = rewards_.cuda(non_blocking=True)
+            dones_ = dones_.cuda(non_blocking=True)
+            weights_ = weights_.cuda(non_blocking=True)
 
-        states, actions, rewards, hidden_states, dones, lengths = super().sample(
-            indices
-        )
-
-        return (
-            states,
-            actions,
-            rewards,
-            hidden_states,
-            dones,
-            lengths,
-            weights,
+        experiences = (
+            states_,
+            actions_,
+            rewards_,
+            hiddens_,
+            dones_,
+            weights_,
+            0,
             indices,
-            eps_d,
+            eps_d_,
         )
+
+        return experiences
 
     def update_priorities(self, indices: list, priorities: np.ndarray):
         """Update priorities of sampled transitions."""
@@ -150,7 +170,7 @@ class RecurrentPrioritizedReplayBuffer(RecurrentReplayBuffer):
 
         for idx, priority in zip(indices, priorities):
             assert priority > 0
-            assert 0 <= idx < len(self)
+            assert 0 <= idx < len(self.buffer)
 
             self.sum_tree[idx] = priority ** self.alpha
             self.min_tree[idx] = priority ** self.alpha
