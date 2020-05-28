@@ -204,6 +204,7 @@ class A2CAgent(Agent):
                     "policy loss": policy_loss,
                     "value loss": value_loss,
                     "score": score,
+                    "total step": self.total_step,
                 }
             )
 
@@ -228,6 +229,7 @@ class A2CAgent(Agent):
 
                 action = self.select_action(state)
                 next_state, reward, done, _ = self.step(action)
+                self.total_step += 1
                 self.episode_step += 1
 
                 policy_loss, value_loss = self.update_model()

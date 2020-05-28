@@ -243,5 +243,6 @@ class BCSACAgent(SACAgent):
                     "vf loss": loss[3],
                     "alpha loss": loss[4],
                     "time per each step": avg_time_cost,
+                    "total step": self.total_step,
                 }
             )

@@ -52,7 +52,6 @@ class DQNAgent(Agent):
         dqn_target (nn.Module): target actor model to select actions
         dqn_optim (Optimizer): optimizer for training actor
         curr_state (np.ndarray): temporary storage of the current state
-        total_step (int): total step number
         episode_step (int): step number of the current episode
         i_episode (int): current episode number
         epsilon (float): parameter for epsilon greedy policy
@@ -78,7 +77,6 @@ class DQNAgent(Agent):
 
         self.curr_state = np.zeros(1)
         self.episode_step = 0
-        self.total_step = 0
         self.i_episode = 0
 
         self.hyper_params = hyper_params
@@ -295,6 +293,7 @@ class DQNAgent(Agent):
                     "dqn loss": loss[0],
                     "avg q values": loss[1],
                     "time per each step": avg_time_cost,
+                    "total step": self.total_step,
                 }
             )
 

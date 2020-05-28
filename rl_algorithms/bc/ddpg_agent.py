@@ -196,5 +196,6 @@ class BCDDPGAgent(DDPGAgent):
                     "actor loss": loss[0],
                     "critic loss": loss[1],
                     "time per each step": avg_time_cost,
+                    "total step": self.total_step,
                 }
             )

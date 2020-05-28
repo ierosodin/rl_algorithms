@@ -312,6 +312,7 @@ class PPOAgent(Agent):
                     "actor loss": actor_loss,
                     "critic loss": critic_loss,
                     "score": score,
+                    "total step": self.total_step,
                 }
             )
 

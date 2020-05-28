@@ -52,8 +52,7 @@ class TD3Agent(Agent):
         critic_optim (Optimizer): optimizer for training critic
         actor_optim (Optimizer): optimizer for training actor
         curr_state (np.ndarray): temporary storage of the current state
-        total_steps (int): total step numbers
-        episode_steps (int): step number of the current episode
+        episode_step (int): step number of the current episode
         i_episode (int): current episode number
         noise_cfg (ConfigDict): config of noise
 
@@ -80,7 +79,6 @@ class TD3Agent(Agent):
         Agent.__init__(self, env, args, log_cfg)
 
         self.curr_state = np.zeros((1,))
-        self.total_step = 0
         self.episode_step = 0
         self.update_step = 0
         self.i_episode = 0
@@ -318,6 +316,7 @@ class TD3Agent(Agent):
                     "critic1 loss": loss[1],
                     "critic2 loss": loss[2],
                     "time per each step": avg_time_cost,
+                    "total step": self.total_step,
                 }
             )
 

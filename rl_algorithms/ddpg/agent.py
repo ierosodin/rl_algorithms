@@ -50,7 +50,6 @@ class DDPGAgent(Agent):
         actor_optim (Optimizer): optimizer for training actor
         critic_optim (Optimizer): optimizer for training critic
         curr_state (np.ndarray): temporary storage of the current state
-        total_step (int): total step numbers
         episode_step (int): step number of the current episode
         i_episode (int): current episode number
 
@@ -71,7 +70,6 @@ class DDPGAgent(Agent):
         Agent.__init__(self, env, args, log_cfg)
 
         self.curr_state = np.zeros((1,))
-        self.total_step = 0
         self.episode_step = 0
         self.i_episode = 0
 
@@ -279,6 +277,7 @@ class DDPGAgent(Agent):
                     "actor loss": loss[0],
                     "critic loss": loss[1],
                     "time per each step": avg_time_cost,
+                    "total step": self.total_step,
                 }
             )
 

@@ -51,7 +51,6 @@ class SACAgent(Agent):
         critic_optim1 (Optimizer): optimizer for training critic_1
         critic_optim2 (Optimizer): optimizer for training critic_2
         curr_state (np.ndarray): temporary storage of the current state
-        total_step (int): total step numbers
         episode_step (int): step number of the current episode
         update_step (int): step number of updates
         i_episode (int): current episode number
@@ -81,7 +80,6 @@ class SACAgent(Agent):
         Agent.__init__(self, env, args, log_cfg)
 
         self.curr_state = np.zeros((1,))
-        self.total_step = 0
         self.episode_step = 0
         self.update_step = 0
         self.i_episode = 0
@@ -375,6 +373,7 @@ class SACAgent(Agent):
                     "vf loss": loss[3],
                     "alpha loss": loss[4],
                     "time per each step": avg_time_cost,
+                    "total step": self.total_step,
                 }
             )
 
