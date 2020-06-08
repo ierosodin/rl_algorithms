@@ -91,6 +91,7 @@ def get_n_step_info(
 
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 def numpy2floattensor(arrays: Tuple[np.ndarray]) -> Tuple[np.ndarray]:
     """Convert numpy arrays to torch float tensor."""
     tensors = []
@@ -103,6 +104,9 @@ def numpy2floattensor(arrays: Tuple[np.ndarray]) -> Tuple[np.ndarray]:
     return tuple(tensors)
 =======
 def infer_leading_dims(tensor, dim):
+=======
+def infer_leading_dims(tensor: torch.Tensor, dim: int) -> Tuple[int, int, int, Tuple]:
+>>>>>>> c42320d... Fix several issues commented
     """Looks for up to two leading dimensions in ``tensor``, before
     the data dimensions, of which there are assumed to be ``dim`` number.
     For use at beginning of model's ``forward()`` method, which should
@@ -127,7 +131,9 @@ def infer_leading_dims(tensor, dim):
     return lead_dim, T, B, shape
 
 
-def restore_leading_dims(tensors, lead_dim, T=1, B=1):
+def restore_leading_dims(
+    tensors: torch.Tensor, lead_dim: int, T: int = 1, B: int = 1
+) -> torch.Tensor:
     """Reshapes ``tensors`` (one or `tuple`, `list`) to to have ``lead_dim``
     leading dimensions, which will become [], [B], or [T,B].  Assumes input
     tensors already have a leading Batch dimension, which might need to be
@@ -160,8 +166,7 @@ def valid_from_done(done):
     """
     done = done.type(torch.float).squeeze()
     valid = torch.ones_like(done)
-    valid[:, 1:] = 1 - torch.clamp(torch.cumsum(done[:, :-1], dim=0), max=1)
-    valid = valid[:, -1] == 0
-    valid = valid.unsqueeze(-1)
+    valid[1:] = 1 - torch.clamp(torch.cumsum(done[:-1], dim=0), max=1)
+    valid = valid[-1] == 0
     return valid
 >>>>>>> 250e4b3... Add R2D1 DQNAgent
