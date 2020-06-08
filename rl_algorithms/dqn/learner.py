@@ -8,7 +8,7 @@ import torch.optim as optim
 
 from rl_algorithms.common.abstract.learner import Learner, TensorTuple
 import rl_algorithms.common.helper_functions as common_utils
-from rl_algorithms.common.networks.brain import Brain
+from rl_algorithms.common.networks.brain import Brain, GRUBrain
 from rl_algorithms.registry import build_loss
 from rl_algorithms.utils.config import ConfigDict
 
@@ -147,3 +147,40 @@ class DQNLearner(Learner):
         self.dqn_target.load_state_dict(params["dqn_target_state_dict"])
         self.dqn_optim.load_state_dict(params["dqn_optim_state_dict"])
         print("[INFO] loaded the model and optimizer from", path)
+
+
+class R2D1Learner(DQNLearner):
+    def __init__(
+        self,
+        args: argparse.Namespace,
+        hyper_params: ConfigDict,
+        log_cfg: ConfigDict,
+        head_cfg: ConfigDict,
+        backbone_cfg: ConfigDict,
+        optim_cfg: ConfigDict,
+        device: torch.device,
+    ):
+        DQNLearner.__init__(
+            self, args, hyper_params, log_cfg, head_cfg, backbone_cfg, optim_cfg, device
+        )
+
+    # pylint: disable=attribute-defined-outside-init
+    def _init_network(self):
+        """Initialize networks and optimizers."""
+        self.dqn = GRUBrain(self.backbone_cfg, self.head_cfg).to(self.device)
+        self.dqn_target = GRUBrain(self.backbone_cfg, self.head_cfg).to(self.device)
+        self.loss_fn = build_loss(self.hyper_params.loss_type)
+
+        self.dqn_target.load_state_dict(self.dqn.state_dict())
+
+        # create optimizer
+        self.dqn_optim = optim.Adam(
+            self.dqn.parameters(),
+            lr=self.optim_cfg.lr_dqn,
+            weight_decay=self.optim_cfg.weight_decay,
+            eps=self.optim_cfg.adam_eps,
+        )
+
+        # load the optimizer and model parameters
+        if self.args.load_from is not None:
+            self.load_params(self.args.load_from)
