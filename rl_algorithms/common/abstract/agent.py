@@ -44,7 +44,7 @@ class Agent(ABC):
         self.log_cfg = log_cfg
         self.log_cfg.env_name = env.spec.id if env.spec is not None else env.name
         self.total_step = 0
-        
+
         if isinstance(env.action_space, Discrete):
             self.is_discrete = True
         else:
