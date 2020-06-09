@@ -16,10 +16,10 @@ from typing import Tuple
 import numpy as np
 import torch
 
-from rl_algorithms.common.buffer.priortized_replay_buffer import PrioritizedReplayBuffer
 from rl_algorithms.common.buffer.replay_buffer import ReplayBuffer
 import rl_algorithms.common.helper_functions as common_utils
 from rl_algorithms.common.helper_functions import numpy2floattensor
+from rl_algorithms.common.wrapper import PERWrapper
 from rl_algorithms.fd.sac_learner import SACfDLearner
 from rl_algorithms.registry import AGENTS
 from rl_algorithms.sac.agent import SACAgent
@@ -64,13 +64,10 @@ class SACfDAgent(SACAgent):
                 )
 
             # replay memory
-            self.memory = PrioritizedReplayBuffer(
-                self.hyper_params.buffer_size,
-                self.hyper_params.batch_size,
-                demo=demos,
-                alpha=self.hyper_params.per_alpha,
-                epsilon_d=self.hyper_params.per_eps_demo,
+            self.memory = ReplayBuffer(
+                self.hyper_params.buffer_size, self.hyper_params.batch_size,
             )
+            self.memory = PERWrapper(self.memory, alpha=self.hyper_params.per_alpha,)
 
         self.learner = SACfDLearner(
             self.args,

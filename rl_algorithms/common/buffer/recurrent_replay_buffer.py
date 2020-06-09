@@ -71,7 +71,6 @@ class RecurrentReplayBuffer:
         self.rews_buf: np.ndarray = None
         self.hiddens_buf: torch.Tensor = None
         self.done_buf: np.ndarray = None
-        self.length_buf: np.ndarray = None
 
         self.n_step_buffer: Deque = deque(maxlen=n_step)
         self.n_step = n_step
@@ -120,7 +119,6 @@ class RecurrentReplayBuffer:
 
         self.idx += 1
         if done and self.idx < self.sequence_size:
-            self.length_buf[self.episode_idx] = self.idx
             self.idx = self.sequence_size
 
         if self.idx % self.sequence_size == 0:
@@ -129,8 +127,6 @@ class RecurrentReplayBuffer:
             self.rews_buf[self.episode_idx] = self.local_rews_buf
             self.hiddens_buf[self.episode_idx] = self.local_hiddens_buf
             self.done_buf[self.episode_idx] = self.local_done_buf
-            if self.length_buf[self.episode_idx] == 0:
-                self.length_buf[self.episode_idx] = self.sequence_size
 
             self.idx = self.overlap_size
             self.episode_idx += 1
@@ -155,7 +151,6 @@ class RecurrentReplayBuffer:
         rewards = torch.FloatTensor(self.rews_buf[indices]).to(device)
         hidden_state = self.hiddens_buf[indices]
         dones = torch.FloatTensor(self.done_buf[indices]).to(device)
-        lengths = self.length_buf[indices]
 
         if torch.cuda.is_available():
             states = states.cuda(non_blocking=True)
@@ -164,7 +159,7 @@ class RecurrentReplayBuffer:
             hidden_state = hidden_state.cuda(non_blocking=True)
             dones = dones.cuda(non_blocking=True)
 
-        return states, actions, rewards, hidden_state, dones, lengths
+        return states, actions, rewards, hidden_state, dones
 
     def _initialize_local_buffers(self):
         """Initialze local buffers for state, action, resward, hidden_state, done."""
@@ -223,8 +218,6 @@ class RecurrentReplayBuffer:
         self.rews_buf = np.zeros([self.buffer_size] + [self.sequence_size], dtype=float)
 
         self.done_buf = np.zeros([self.buffer_size] + [self.sequence_size], dtype=float)
-
-        self.length_buf = np.zeros([self.buffer_size], dtype=int)
 
         self._initialize_local_buffers()
 

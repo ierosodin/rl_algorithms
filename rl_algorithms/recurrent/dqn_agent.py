@@ -12,11 +12,9 @@ import numpy as np
 import torch
 import wandb
 
-from rl_algorithms.common.buffer.recurrent_prioritized_replay_buffer import (
-    RecurrentPrioritizedReplayBuffer,
-)
 from rl_algorithms.common.buffer.recurrent_replay_buffer import RecurrentReplayBuffer
 import rl_algorithms.common.helper_functions as common_utils
+from rl_algorithms.common.wrapper import PERWrapper
 from rl_algorithms.dqn.agent import DQNAgent
 from rl_algorithms.dqn.learner import R2D1Learner
 from rl_algorithms.registry import AGENTS
@@ -38,13 +36,13 @@ class R2D1Agent(DQNAgent):
         """Initialize non-common things."""
         if not self.args.test:
 
-            self.memory = RecurrentPrioritizedReplayBuffer(
+            self.memory = RecurrentReplayBuffer(
                 self.hyper_params.buffer_size,
                 self.hyper_params.batch_size,
                 self.hyper_params.sequence_size,
                 self.hyper_params.overlap_size,
-                alpha=self.hyper_params.per_alpha,
             )
+            self.memory = PERWrapper(self.memory, alpha=self.hyper_params.per_alpha)
 
             # replay memory for multi-steps
             if self.use_n_step:

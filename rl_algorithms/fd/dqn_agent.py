@@ -13,9 +13,9 @@ import numpy as np
 import torch
 import wandb
 
-from rl_algorithms.common.buffer.priortized_replay_buffer import PrioritizedReplayBuffer
 from rl_algorithms.common.buffer.replay_buffer import ReplayBuffer
 import rl_algorithms.common.helper_functions as common_utils
+from rl_algorithms.common.wrapper import PERWrapper
 from rl_algorithms.dqn.agent import DQNAgent
 from rl_algorithms.fd.dqn_learner import DQfDLearner
 from rl_algorithms.registry import AGENTS
@@ -53,13 +53,10 @@ class DQfDAgent(DQNAgent):
                 )
 
             # replay memory
-            self.memory = PrioritizedReplayBuffer(
-                self.hyper_params.buffer_size,
-                self.hyper_params.batch_size,
-                demo=demos,
-                alpha=self.hyper_params.per_alpha,
-                epsilon_d=self.hyper_params.per_eps_demo,
+            self.memory = ReplayBuffer(
+                self.hyper_params.buffer_size, self.hyper_params.batch_size,
             )
+            self.memory = PERWrapper(self.memory, alpha=self.hyper_params.per_alpha,)
 
         self.learner = DQfDLearner(
             self.args,

@@ -12,8 +12,9 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 
-from rl_algorithms.common.buffer.priortized_replay_buffer import PrioritizedReplayBuffer
+from rl_algorithms.common.buffer.replay_buffer import ReplayBuffer
 import rl_algorithms.common.helper_functions as common_utils
+from rl_algorithms.common.wrapper import PERWrapper
 from rl_algorithms.ddpg.agent import DDPGAgent
 from rl_algorithms.registry import AGENTS
 
@@ -37,11 +38,10 @@ class PERDDPGAgent(DDPGAgent):
 
         if not self.args.test:
             # replay memory
-            self.memory = PrioritizedReplayBuffer(
-                self.hyper_params.buffer_size,
-                self.hyper_params.batch_size,
-                alpha=self.hyper_params.per_alpha,
+            self.memory = ReplayBuffer(
+                self.hyper_params.buffer_size, self.hyper_params.batch_size,
             )
+            self.memory = PERWrapper(self.memory, alpha=self.hyper_params.per_alpha,)
 
     def update_model(self) -> Tuple[torch.Tensor, ...]:
         """Train the model after each episode."""
