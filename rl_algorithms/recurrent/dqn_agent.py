@@ -13,8 +13,8 @@ import torch
 import wandb
 
 from rl_algorithms.common.buffer.recurrent_replay_buffer import RecurrentReplayBuffer
+from rl_algorithms.common.buffer.wrapper import PERWrapper
 import rl_algorithms.common.helper_functions as common_utils
-from rl_algorithms.common.wrapper import PERWrapper
 from rl_algorithms.dqn.agent import DQNAgent
 from rl_algorithms.dqn.learner import R2D1Learner
 from rl_algorithms.registry import AGENTS

@@ -13,13 +13,14 @@ from typing import Any, Tuple
 import numpy as np
 import torch
 
+from rl_algorithms.common.abstract.buffer import BufferWrapper
 from rl_algorithms.common.buffer.recurrent_replay_buffer import RecurrentReplayBuffer
 from rl_algorithms.common.buffer.segment_tree import MinSegmentTree, SumSegmentTree
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-class PERWrapper:
+class PERWrapper(BufferWrapper):
     """Fixed-size buffer to store experience tuples.
 
     Attributes:
@@ -46,8 +47,7 @@ class PERWrapper:
             alpha (float): alpha parameter for prioritized replay buffer
 
         """
-
-        self.buffer = replay_buffer
+        super().__init__(replay_buffer)
         assert alpha >= 0
         self.alpha = alpha
         self.epsilon_d = epsilon_d

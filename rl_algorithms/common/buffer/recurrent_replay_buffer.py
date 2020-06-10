@@ -7,12 +7,13 @@ from typing import Any, Deque, List, Tuple
 import numpy as np
 import torch
 
+from rl_algorithms.common.abstract.buffer import Buffer
 from rl_algorithms.common.helper_functions import get_n_step_info
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
-class RecurrentReplayBuffer:
+class RecurrentReplayBuffer(Buffer):
     """Fixed-size buffer to store experience tuples.
     Attributes:
         obs_buf (np.ndarray): observations

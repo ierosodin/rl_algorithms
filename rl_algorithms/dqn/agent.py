@@ -24,8 +24,8 @@ import wandb
 
 from rl_algorithms.common.abstract.agent import Agent
 from rl_algorithms.common.buffer.replay_buffer import ReplayBuffer
+from rl_algorithms.common.buffer.wrapper import PERWrapper
 from rl_algorithms.common.helper_functions import numpy2floattensor
-from rl_algorithms.common.wrapper import PERWrapper
 from rl_algorithms.dqn.learner import DQNLearner
 from rl_algorithms.registry import AGENTS
 from rl_algorithms.utils.config import ConfigDict

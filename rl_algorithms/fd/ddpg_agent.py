@@ -16,9 +16,9 @@ import numpy as np
 import torch
 
 from rl_algorithms.common.buffer.replay_buffer import ReplayBuffer
+from rl_algorithms.common.buffer.wrapper import PERWrapper
 import rl_algorithms.common.helper_functions as common_utils
 from rl_algorithms.common.helper_functions import numpy2floattensor
-from rl_algorithms.common.wrapper import PERWrapper
 from rl_algorithms.ddpg.agent import DDPGAgent
 from rl_algorithms.fd.ddpg_learner import DDPGfDLearner
 from rl_algorithms.registry import AGENTS

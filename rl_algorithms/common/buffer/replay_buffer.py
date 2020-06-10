@@ -6,10 +6,11 @@ from typing import Any, Deque, List, Tuple
 
 import numpy as np
 
+from rl_algorithms.common.abstract.buffer import Buffer
 from rl_algorithms.common.helper_functions import get_n_step_info
 
 
-class ReplayBuffer:
+class ReplayBuffer(Buffer):
     """Fixed-size buffer to store experience tuples.
 
     Attributes:

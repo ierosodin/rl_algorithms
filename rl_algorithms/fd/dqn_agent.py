@@ -14,8 +14,8 @@ import torch
 import wandb
 
 from rl_algorithms.common.buffer.replay_buffer import ReplayBuffer
+from rl_algorithms.common.buffer.wrapper import PERWrapper
 import rl_algorithms.common.helper_functions as common_utils
-from rl_algorithms.common.wrapper import PERWrapper
 from rl_algorithms.dqn.agent import DQNAgent
 from rl_algorithms.fd.dqn_learner import DQfDLearner
 from rl_algorithms.registry import AGENTS
